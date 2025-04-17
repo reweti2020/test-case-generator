@@ -12,44 +12,58 @@ if (isDev) {
 } else {
   // Vercel serverless environment
   puppeteer = require('puppeteer-core');
-  chromium = require('@sparticuz/chromium-min');
-  chromeAWSLambda = require('chrome-aws-lambda');
+  try {
+    chromium = require('@sparticuz/chromium-min');
+  } catch (e) {
+    console.log('Could not load @sparticuz/chromium-min:', e.message);
+  }
+  try {
+    chromeAWSLambda = require('chrome-aws-lambda');
+  } catch (e) {
+    console.log('Could not load chrome-aws-lambda:', e.message);
+  }
 }
 
 async function generateTestCases(url, format = 'plain') {
   let browser;
   
-  if (isDev) {
-    // Local development
-    browser = await puppeteer.launch({ 
-      headless: true,
-      args: ['--no-sandbox', '--disable-setuid-sandbox']
-    });
-  } else {
-    // Vercel serverless environment
-    try {
-      // First try chrome-aws-lambda
-      browser = await puppeteer.launch({
-        args: chromeAWSLambda.args,
-        executablePath: await chromeAWSLambda.executablePath,
-        headless: true,
-      });
-    } catch (error) {
-      console.log('Failed to launch with chrome-aws-lambda, trying @sparticuz/chromium-min');
-      // Fallback to @sparticuz/chromium-min
-      browser = await puppeteer.launch({
-        args: chromium.args,
-        executablePath: await chromium.executablePath(),
-        headless: chromium.headless,
-      });
-    }
-  }
-  
-  const page = await browser.newPage();
-  console.log(`Navigating to ${url}...`);
-  
   try {
-    await page.goto(url, { waitUntil: 'networkidle2', timeout: 30000 });
+    if (isDev) {
+      // Local development
+      browser = await puppeteer.launch({ 
+        headless: true,
+        args: ['--no-sandbox', '--disable-setuid-sandbox']
+      });
+    } else {
+      // Vercel serverless environment
+      try {
+        // First try chrome-aws-lambda if available
+        if (chromeAWSLambda) {
+          browser = await puppeteer.launch({
+            args: chromeAWSLambda.args,
+            executablePath: await chromeAWSLambda.executablePath,
+            headless: true,
+          });
+        } else if (chromium) {
+          // Fallback to @sparticuz/chromium-min
+          browser = await puppeteer.launch({
+            args: chromium.args,
+            executablePath: await chromium.executablePath(),
+            headless: chromium.headless,
+          });
+        } else {
+          throw new Error('No compatible browser automation library available');
+        }
+      } catch (error) {
+        console.log('Browser launch error:', error);
+        throw error;
+      }
+    }
+    
+    const page = await browser.newPage();
+    console.log(`Navigating to ${url}...`);
+    
+    await page.goto(url, { waitUntil: 'networkidle2', timeout: 20000 });
     
     // Extract page title
     const title = await page.title();
@@ -121,10 +135,15 @@ async function generateTestCases(url, format = 'plain') {
     
     await browser.close();
     return { success: true, testCases: formattedOutput };
-    
   } catch (error) {
     console.error('Error during page processing:', error);
-    await browser.close();
+    if (browser) {
+      try {
+        await browser.close();
+      } catch (e) {
+        console.error('Error closing browser:', e);
+      }
+    }
     return { success: false, error: error.message };
   }
 }
@@ -133,7 +152,7 @@ function formatKatalonTestCases(url, title, buttons, inputs, links, forms) {
   // Katalon format example (simplified)
   let katalon = `<?xml version="1.0" encoding="UTF-8"?>
 <TestSuiteEntity>
-   <name>Generated Test Suite for ${url}</name>
+   <n>Generated Test Suite for ${url}</n>
    <testCaseLink>
       <testCaseId>Test Cases/VerifyPageLoads</testCaseId>
       <guid>1</guid>
@@ -145,7 +164,7 @@ function formatKatalonTestCases(url, title, buttons, inputs, links, forms) {
       <testCaseId>Test Cases/VerifyButton_${index}</testCaseId>
       <guid>${index + 2}</guid>
       <variable>
-         <name>buttonText</name>
+         <n>buttonText</n>
          <value>${button.text}</value>
       </variable>
    </testCaseLink>`;
@@ -180,31 +199,6 @@ appId: ${new URL(url).hostname}
   });
   
   return maestro;
-}
-
-// For direct Node.js usage
-if (require.main === module) {
-  const url = process.argv[2];
-  if (!url) {
-    console.log('Please provide a URL: node testGen.js https://example.com');
-    process.exit(1);
-  }
-  
-  const format = process.argv[3] || 'plain';
-  
-  generateTestCases(url, format)
-    .then(result => {
-      if (result.success) {
-        if (Array.isArray(result.testCases)) {
-          console.log('Generated Test Cases:');
-          result.testCases.forEach(tc => console.log(tc));
-        } else {
-          console.log(result.testCases);
-        }
-      } else {
-        console.error('Error:', result.error);
-      }
-    });
 }
 
 // Export for use in API routes
