@@ -3,9 +3,17 @@
   "version": "1.0.0",
   "description": "Generate test cases from any URL",
   "scripts": {
-    "dev": "node src/utils/testGen.js"
+    "dev": "vercel dev",
+    "build": "mkdir -p public && cp src/index.html public/index.html",
+    "test": "echo \"No tests specified\" && exit 0"
   },
   "dependencies": {
     "puppeteer": "^21.0.0"
+  },
+  "devDependencies": {
+    "vercel": "^29.1.1"
+  },
+  "engines": {
+    "node": ">=16.x"
   }
 }
