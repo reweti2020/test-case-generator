@@ -1,0 +1,17 @@
+# Ignore node_modules to speed up uploads
+node_modules
+
+# Ignore git-related files
+.git
+.gitignore
+
+# Ignore local environment files
+.env
+.env.local
+
+# You might need to include these directories if they're empty
+# but Vercel requires them for the build
+# !public/
+# !api/
+# !src/
+# !src/utils/
