@@ -1,10 +1,49 @@
-const puppeteer = require('puppeteer');
+// Conditionally import puppeteer based on environment
+let puppeteer;
+let chromium;
+let chromeAWSLambda;
+
+// Check if we're in a Vercel serverless environment
+const isDev = process.env.NODE_ENV === 'development';
+
+if (isDev) {
+  // Local development
+  puppeteer = require('puppeteer');
+} else {
+  // Vercel serverless environment
+  puppeteer = require('puppeteer-core');
+  chromium = require('@sparticuz/chromium-min');
+  chromeAWSLambda = require('chrome-aws-lambda');
+}
 
 async function generateTestCases(url, format = 'plain') {
-  const browser = await puppeteer.launch({ 
-    headless: 'new',
-    args: ['--no-sandbox', '--disable-setuid-sandbox']
-  });
+  let browser;
+  
+  if (isDev) {
+    // Local development
+    browser = await puppeteer.launch({ 
+      headless: true,
+      args: ['--no-sandbox', '--disable-setuid-sandbox']
+    });
+  } else {
+    // Vercel serverless environment
+    try {
+      // First try chrome-aws-lambda
+      browser = await puppeteer.launch({
+        args: chromeAWSLambda.args,
+        executablePath: await chromeAWSLambda.executablePath,
+        headless: true,
+      });
+    } catch (error) {
+      console.log('Failed to launch with chrome-aws-lambda, trying @sparticuz/chromium-min');
+      // Fallback to @sparticuz/chromium-min
+      browser = await puppeteer.launch({
+        args: chromium.args,
+        executablePath: await chromium.executablePath(),
+        headless: chromium.headless,
+      });
+    }
+  }
   
   const page = await browser.newPage();
   console.log(`Navigating to ${url}...`);
