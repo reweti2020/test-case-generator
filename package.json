@@ -1,0 +1,11 @@
+{
+  "name": "test-case-generator",
+  "version": "1.0.0",
+  "description": "Generate test cases from any URL",
+  "scripts": {
+    "dev": "node src/utils/testGen.js"
+  },
+  "dependencies": {
+    "puppeteer": "^21.0.0"
+  }
+}
