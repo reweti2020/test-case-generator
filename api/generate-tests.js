@@ -1,7 +1,23 @@
 // api/generate-tests.js
-const { generateTestCases } = require('../../src/utils/testGen');
+const path = require('path');
 
+// Adjust the path to find testGen.js
+const utilsPath = path.join(process.cwd(), 'src', 'utils');
+const { generateTestCases } = require('../src/utils/testGen');
+
+// Vercel serverless function with increased timeout handling
 module.exports = async (req, res) => {
+  // Set appropriate CORS headers for your domain
+  res.setHeader('Access-Control-Allow-Credentials', 'true');
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS,POST');
+  res.setHeader('Access-Control-Allow-Headers', 'X-CSRF-Token, X-Requested-With, Accept, Accept-Version, Content-Length, Content-MD5, Content-Type, Date, X-Api-Version');
+
+  // Handle preflight OPTIONS request
+  if (req.method === 'OPTIONS') {
+    return res.status(200).end();
+  }
+  
   if (req.method !== 'POST') {
     return res.status(405).json({ success: false, error: 'Method not allowed' });
   }
@@ -16,8 +32,16 @@ module.exports = async (req, res) => {
     // Validate URL format
     new URL(url);
     
-    // Generate test cases
-    const result = await generateTestCases(url, format);
+    // Create a timeout promise to prevent exceeding Vercel's function execution time
+    const timeoutPromise = new Promise((_, reject) => {
+      setTimeout(() => reject(new Error('Request timeout - URL analysis took too long')), 25000);
+    });
+    
+    // Race the test case generation against the timeout
+    const result = await Promise.race([
+      generateTestCases(url, format),
+      timeoutPromise
+    ]);
     
     return res.status(200).json(result);
   } catch (error) {
