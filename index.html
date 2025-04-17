@@ -4,13 +4,18 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>Test Case Generator</title>
-  <link rel="stylesheet" href="../../public/style.css">
+  <link rel="stylesheet" href="/style.css">
 </head>
 <body>
   <div class="container">
     <h1>🧪 Test Case Generator</h1>
     <form id="url-form">
       <input type="text" id="url-input" placeholder="Enter website URL" required />
+      <select id="format-select">
+        <option value="plain">Plain Text</option>
+        <option value="katalon">Katalon Format</option>
+        <option value="maestro">Maestro Format</option>
+      </select>
       <button type="submit">Generate Test Cases</button>
     </form>
     <div id="output"></div>
@@ -20,17 +25,35 @@
     document.getElementById('url-form').addEventListener('submit', async (e) => {
       e.preventDefault();
       const url = document.getElementById('url-input').value;
+      const format = document.getElementById('format-select').value;
       const output = document.getElementById('output');
+      
       output.innerHTML = '⏳ Generating test cases...';
 
-      // This is placeholder logic — you'll replace with backend call or puppeteer later
-      setTimeout(() => {
-        output.innerHTML = `
-          <p>✅ Test Case 1: Verify page loads at <strong>${url}</strong>.</p>
-          <p>✅ Test Case 2: Verify all buttons are rendered.</p>
-          <p>✅ Test Case 3: Verify input fields are present.</p>
-        `;
-      }, 1500);
+      try {
+        const response = await fetch('/api/generate-tests', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ url, format }),
+        });
+
+        const data = await response.json();
+        
+        if (data.success) {
+          if (Array.isArray(data.testCases)) {
+            output.innerHTML = data.testCases.map(tc => `<p>✅ ${tc}</p>`).join('');
+          } else {
+            // For Katalon or Maestro format (text-based)
+            output.innerHTML = `<pre>${data.testCases}</pre>`;
+          }
+        } else {
+          output.innerHTML = `<p>❌ Error: ${data.error}</p>`;
+        }
+      } catch (error) {
+        output.innerHTML = `<p>❌ Error: ${error.message}</p>`;
+      }
     });
   </script>
 </body>
