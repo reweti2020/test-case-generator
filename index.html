@@ -77,6 +77,28 @@
   </div>
 
   <script>
+    // Debug logger that styles console output for better readability
+    const logger = {
+      info: (label, data) => {
+        console.log(`%c📝 ${label}:`, 'color: #0070f3; font-weight: bold;', data);
+      },
+      warn: (label, data) => {
+        console.warn(`%c⚠️ ${label}:`, 'color: #ff9800; font-weight: bold;', data);
+      },
+      error: (label, data) => {
+        console.error(`%c🛑 ${label}:`, 'color: #f44336; font-weight: bold;', data);
+      },
+      success: (label, data) => {
+        console.log(`%c✅ ${label}:`, 'color: #4caf50; font-weight: bold;', data);
+      },
+      group: (label) => {
+        console.group(`%c📊 ${label}`, 'color: #9c27b0; font-weight: bold;');
+      },
+      groupEnd: () => {
+        console.groupEnd();
+      }
+    };
+
     document.getElementById('url-form').addEventListener('submit', async (e) => {
       e.preventDefault();
       const url = document.getElementById('url-input').value;
@@ -85,11 +107,41 @@
       
       output.innerHTML = '⏳ Generating test cases...';
 
+      logger.group('Test Case Generation Request');
+      logger.info('Request Parameters', { url, format });
+      
+      // Validate URL format on client side first
+      let isValidUrl = false;
       try {
+        new URL(url);
+        isValidUrl = true;
+        logger.success('URL Validation', 'Valid URL format');
+      } catch (error) {
+        logger.error('URL Validation', `Invalid URL format: ${error.message}`);
+        output.innerHTML = `<p>❌ Error: Invalid URL format. Make sure to include http:// or https://</p>`;
+        logger.groupEnd();
+        return;
+      }
+
+      try {
+        logger.info('Sending Request', 'Starting fetch operation');
+        const startTime = performance.now();
+        
         // Add a client-side timeout as well
         const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 30000);
+        const timeoutId = setTimeout(() => {
+          logger.warn('Request Timeout', 'Client-side timeout triggered after 30 seconds');
+          controller.abort();
+        }, 30000);
         
+        logger.info('Request Details', {
+          endpoint: '/api/generate-tests',
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ url, format })
+        });
+        
+        // Make the actual request
         const response = await fetch('/api/generate-tests', {
           method: 'POST',
           headers: {
@@ -100,26 +152,98 @@
         });
         
         clearTimeout(timeoutId);
+        const endTime = performance.now();
+        logger.info('Response Time', `${Math.round(endTime - startTime)}ms`);
+        
+        logger.group('Response Details');
+        logger.info('Status', response.status);
+        logger.info('Status Text', response.statusText);
+        logger.info('OK', response.ok);
+        
+        // Log headers
+        const headers = {};
+        response.headers.forEach((value, key) => {
+          headers[key] = value;
+        });
+        logger.info('Headers', headers);
+        logger.groupEnd();
         
         if (!response.ok) {
-          throw new Error(`Server responded with status: ${response.status}`);
-        }
-
-        const data = await response.json();
-        
-        if (data.success) {
-          if (Array.isArray(data.testCases)) {
-            output.innerHTML = data.testCases.map(tc => `<p>✅ ${tc}</p>`).join('');
-          } else {
-            // For Katalon or Maestro format (text-based)
-            output.innerHTML = `<pre>${data.testCases}</pre>`;
+          logger.error('Response Error', `Server responded with status: ${response.status}`);
+          output.innerHTML = `<p>❌ Error: Server responded with status: ${response.status}</p>`;
+          
+          // Try to get error details if possible
+          try {
+            const errorText = await response.text();
+            logger.error('Error Details', errorText);
+            try {
+              const errorJson = JSON.parse(errorText);
+              logger.error('Error JSON', errorJson);
+              if (errorJson.error) {
+                output.innerHTML = `<p>❌ Error: ${errorJson.error}</p>`;
+              }
+            } catch (e) {
+              // Not JSON, use text
+              if (errorText) {
+                output.innerHTML += `<pre>${errorText}</pre>`;
+              }
+            }
+          } catch (e) {
+            logger.error('Error Reading Response', e);
           }
         } else {
-          output.innerHTML = `<p>❌ Error: ${data.error}</p>`;
+          try {
+            const data = await response.json();
+            logger.success('Response Data', data);
+            
+            if (data.success) {
+              if (data.note) {
+                logger.warn('Processing Note', data.note);
+                output.innerHTML = `<p>⚠️ Note: ${data.note}</p>`;
+              }
+              
+              if (Array.isArray(data.testCases)) {
+                logger.success('Test Cases Array', data.testCases);
+                output.innerHTML += data.testCases.map(tc => `<p>✅ ${tc}</p>`).join('');
+              } else {
+                logger.success('Test Cases Text', data.testCases);
+                output.innerHTML += `<pre>${data.testCases}</pre>`;
+              }
+            } else {
+              logger.error('Processing Error', data.error);
+              output.innerHTML = `<p>❌ Error: ${data.error}</p>`;
+              
+              // Still show test cases if they exist
+              if (data.testCases) {
+                output.innerHTML += Array.isArray(data.testCases) 
+                  ? data.testCases.map(tc => `<p>✅ ${tc}</p>`).join('')
+                  : `<pre>${data.testCases}</pre>`;
+              }
+            }
+          } catch (error) {
+            logger.error('JSON Parsing Error', error);
+            output.innerHTML = `<p>❌ Error: Could not parse response: ${error.message}</p>`;
+            
+            try {
+              const text = await response.text();
+              logger.error('Raw Response', text);
+              output.innerHTML += `<pre>${text}</pre>`;
+            } catch (e) {
+              logger.error('Error Reading Raw Response', e);
+            }
+          }
         }
       } catch (error) {
-        output.innerHTML = `<p>❌ Error: ${error.message}</p>`;
+        logger.error('Request Error', error);
+        
+        if (error.name === 'AbortError') {
+          output.innerHTML = `<p>❌ Error: Request timed out after 30 seconds</p>`;
+        } else {
+          output.innerHTML = `<p>❌ Error: ${error.message}</p>`;
+        }
       }
+      
+      logger.groupEnd();
     });
   </script>
 </body>
