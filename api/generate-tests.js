@@ -11,10 +11,9 @@ module.exports = async (req, res) => {
     return res.status(200).end();
   }
   
-  // Debug: Log all incoming data
   console.log('API Route Called');
   console.log('Request Method:', req.method);
-  console.log('Request Body:', req.body);
+  console.log('Request Body:', JSON.stringify(req.body));
   
   if (req.method !== 'POST') {
     return res.status(405).json({ success: false, error: 'Method not allowed' });
@@ -25,12 +24,40 @@ module.exports = async (req, res) => {
   console.log('Extracted URL:', url);
   console.log('Extracted Format:', format);
 
-  // Debug: Skip the actual test generation and just return success
-  return res.status(200).json({ 
-    success: true, 
-    testCases: [
-      "Debug Test Case 1: This is a test case",
-      "Debug Test Case 2: Another test case"
-    ]
-  });
+  if (!url) {
+    return res.status(400).json({ success: false, error: 'URL is required' });
+  }
+
+  try {
+    // Actually validate the URL
+    const validatedUrl = new URL(url);
+    console.log('URL validated:', validatedUrl.href);
+    
+    // Return custom test cases based on the provided URL
+    const hostname = validatedUrl.hostname;
+    
+    // Generate more realistic dummy test cases
+    return res.status(200).json({ 
+      success: true, 
+      testCases: [
+        `Test Case 1: Verify page loads at ${url} with correct title`,
+        `Test Case 2: Verify navigation menu is present on ${hostname}`,
+        `Test Case 3: Test search functionality on ${hostname}`,
+        `Test Case 4: Verify responsive design on mobile viewports`,
+        `Test Case 5: Test form submission on ${hostname}`,
+        `Test Case 6: Verify ${format} format output is correct`
+      ]
+    });
+  } catch (error) {
+    console.error('Error:', error.message);
+    
+    if (error instanceof TypeError && error.code === 'ERR_INVALID_URL') {
+      return res.status(400).json({ success: false, error: 'Invalid URL format: ' + error.message });
+    }
+    
+    return res.status(500).json({ 
+      success: false, 
+      error: 'Error processing request: ' + error.message 
+    });
+  }
 };
