@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Payment Successful - Test Case Generator</title>
+  <link rel="stylesheet" href="css/styles.css">
+  <style>
+    .success-container {
+      max-width: 800px;
+      margin: 2rem auto;
+      padding: 2rem;
+      background-color: white;
+      border-radius: 8px;
+      box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+      text-align: center;
+    }
+    
+    .success-icon {
+      font-size: 4rem;
+      color: #28a745;
+      margin-bottom: 1rem;
+    }
+    
+    .features-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+      gap: 1.5rem;
+      margin: 2rem 0;
+    }
+    
+    .feature-card {
+      background-color: #f8f9fa;
+      padding: 1.5rem;
+      border-radius: 8px;
+      text-align: center;
+    }
+    
+    .feature-card h3 {
+      margin-bottom: 0.5rem;
+      color: #4a6cf7;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="header-content">
+      <h1>Test Case Generator</h1>
+      <p>Automatically generate test cases from any website</p>
+    </div>
+  </header>
+
+  <main class="container">
+    <div class="success-container">
+      <div class="success-icon">✓</div>
+      <h2>Payment Successful!</h2>
+      <p>Thank you for upgrading to the Pro plan. Your subscription has been activated.</p>
+      
+      <div class="features-grid">
+        <div class="feature-card">
+          <h3>Unlimited Tests</h3>
+          <p>Generate as many test cases as you need without limits</p>
+        </div>
+        <div class="feature-card">
+          <h3>All Formats</h3>
+          <p>Export in Katalon, Maestro and all premium formats</p>
+        </div>
+        <div class="feature-card">
+          <h3>Enhanced Detection</h3>
+          <p>Better element detection for more accurate tests</p>
+        </div>
+        <div class="feature-card">
+          <h3>Priority Support</h3>
+          <p>Get faster responses to your support queries</p>
+        </div>
+      </div>
+      
+      <a href="/" class="button-primary">Return to Test Generator</a>
+    </div>
+  </main>
+
+  <footer>
+    <p>&copy; 2025 Test Case Generator. All rights reserved.</p>
+  </footer>
+  
+  <script>
+    // Session ID is in the URL if coming from Stripe
+    const urlParams = new URLSearchParams(window.location.search);
+    const sessionId = urlParams.get('session_id');
+    
+    if (sessionId) {
+      // Store the subscription status in localStorage
+      localStorage.setItem('userPlan', 'pro');
+      
+      // You could also make an API call to verify the subscription on your backend
+      console.log('Subscription activated with session ID:', sessionId);
+    }
+  </script>
+</body>
+</html>
