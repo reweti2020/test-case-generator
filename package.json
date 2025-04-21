@@ -1,118 +1,24 @@
-async function generateTestCases(url, format = 'plain') {
-  let browser;
-  const TOTAL_TIMEOUT = 45000; // Increased to 45 seconds
-  const NAVIGATION_TIMEOUT = 30000; // Increased to 30 seconds
-  const ELEMENT_TIMEOUT = 15000; // Increased to 15 seconds
-
-  try {
-    // Enhanced logging
-    console.log('Attempting to generate test cases for:', url);
-
-    // Serverless environment launch
-    try {
-      // Prefer chromium over chrome-aws-lambda
-      if (chromium) {
-        console.log('Launching with @sparticuz/chromium-min');
-        browser = await puppeteer.launch({
-          args: [
-            ...chromium.args,
-            '--no-sandbox', 
-            '--disable-setuid-sandbox',
-            '--disable-dev-shm-usage',
-            '--disable-accelerated-2d-canvas',
-            '--no-first-run',
-            '--no-zygote',
-            '--single-process',
-            '--disable-gpu'
-          ],
-          defaultViewport: chromium.defaultViewport,
-          executablePath: await chromium.executablePath,
-          headless: true,
-          ignoreHTTPSErrors: true
-        });
-      } else if (chromeAWSLambda) {
-        console.log('Launching with chrome-aws-lambda');
-        browser = await puppeteer.launch({
-          args: chromeAWSLambda.args,
-          defaultViewport: chromeAWSLambda.defaultViewport,
-          executablePath: await chromeAWSLambda.executablePath,
-          headless: true,
-          ignoreHTTPSErrors: true
-        });
-      } else {
-        throw new Error('No compatible browser automation library available');
-      }
-    } catch (launchError) {
-      console.error('Browser launch error:', launchError);
-      return {
-        success: false,
-        error: `Browser launch failed: ${launchError.message}`,
-        details: launchError
-      };
-    }
-
-    const page = await browser.newPage();
-    
-    // Enhanced page configuration
-    await page.setDefaultNavigationTimeout(NAVIGATION_TIMEOUT);
-    await page.setDefaultTimeout(ELEMENT_TIMEOUT);
-
-    try {
-      console.log('Navigating to URL:', url);
-      
-      // More robust navigation
-      await page.goto(url, { 
-        waitUntil: ['load', 'domcontentloaded', 'networkidle0'],
-        timeout: NAVIGATION_TIMEOUT
-      });
-
-      // Wait for body to be ready
-      await page.waitForSelector('body', { timeout: ELEMENT_TIMEOUT });
-
-      // Capture any console logs during page load
-      page.on('console', (msg) => {
-        console.log('Page Console:', msg.text());
-      });
-
-      // Page error logging
-      page.on('pageerror', (err) => {
-        console.error('Page Error:', err);
-      });
-
-      // Network error logging
-      page.on('requestfailed', (request) => {
-        console.log('Failed Request:', request.url());
-      });
-
-      // Rest of your existing code remains the same...
-    } catch (pageError) {
-      console.error('Page analysis detailed error:', {
-        message: pageError.message,
-        name: pageError.name,
-        stack: pageError.stack
-      });
-
-      // Ensure browser is closed
-      if (browser) await browser.close();
-
-      return { 
-        success: false, 
-        error: `Page analysis failed: ${pageError.message}`,
-        details: {
-          url,
-          errorType: pageError.name,
-          errorMessage: pageError.message
-        }
-      };
-    } finally {
-      if (browser) await browser.close();
-    }
-  } catch (globalError) {
-    console.error('Global test generation error:', globalError);
-    return {
-      success: false,
-      error: `Test generation failed: ${globalError.message}`,
-      fallbackSuggestion: 'Try a simpler website or check network connectivity'
-    };
-  }
+{
+  "name": "test-case-generator",
+  "version": "1.0.0",
+  "description": "A tool that generates test cases for web applications",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "dev": "NODE_ENV=development node index.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "dependencies": {
+    "puppeteer-core": "^19.7.0",
+    "@sparticuz/chromium-min": "^110.0.1",
+    "chrome-aws-lambda": "^10.1.0"
+  },
+  "devDependencies": {
+    "puppeteer": "^19.7.0"
+  },
+  "engines": {
+    "node": "16.x"
+  },
+  "author": "",
+  "license": "MIT"
 }
