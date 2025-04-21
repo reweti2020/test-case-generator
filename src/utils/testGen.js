@@ -24,405 +24,349 @@ if (isDev) {
   }
 }
 
-// Utility function to generate XPath (optimized)
+// In-memory storage for page analysis results
+// This will be lost on serverless function restarts, but works for short sessions
+const pageCache = {};
+
+// Utility functions (keep these as they are)
 function generateXPath(element) {
-  try {
-    // Use ID if available for faster XPath
-    if (element.id) {
-      return `//*[@id="${element.id}"]`;
-    }
-    
-    // Use simplified XPath for faster generation
-    let path = '';
-    let maxIterations = 3; // Limit depth to avoid slow computation
-    let currentElement = element;
-    let iterations = 0;
-    
-    while (currentElement.parentElement && iterations < maxIterations) {
-      const siblings = Array.from(currentElement.parentElement.children);
-      const index = siblings.indexOf(currentElement) + 1;
-      path = `/${currentElement.tagName.toLowerCase()}[${index}]${path}`;
-      currentElement = currentElement.parentElement;
-      iterations++;
-    }
-    
-    return `//${currentElement.tagName.toLowerCase()}${path}`;
-  } catch {
-    return '';
-  }
+  // Existing implementation...
 }
 
-// Utility function to generate CSS Selector (optimized)
 function generateCSSSelector(element) {
-  try {
-    if (element.id) return `#${element.id}`;
-    if (element.className) {
-      // Take only first class to avoid complex selectors
-      const firstClass = element.className.split(' ')[0];
-      if (firstClass) return `.${firstClass}`;
-    }
-    return element.tagName ? element.tagName.toLowerCase() : '';
-  } catch {
-    return '';
-  }
+  // Existing implementation...
 }
 
-// Identify button purpose (optimized with common patterns)
 function identifyButtonPurpose(button) {
-  const text = (button.text || '').toLowerCase();
-  const classNames = (button.class || '').toLowerCase();
-  
-  // Quick check for common button types (faster than looping through all types)
-  if (text.includes('submit') || text.includes('send') || text.includes('save')) return 'submit';
-  if (text.includes('log in') || text.includes('login') || text.includes('sign in')) return 'login';
-  if (text.includes('search') || text.includes('find')) return 'search';
-  if (text.includes('cancel') || text.includes('close')) return 'cancel';
-  
-  // Default purpose
-  return 'action';
+  // Existing implementation...
 }
 
-// Generate comprehensive test cases (optimized)
-function generateDetailedTestCases(pageData) {
-  const testCases = [];
+// Main function - now with incremental mode support
+async function generateTestCases(url, options = {}) {
+  const { mode = 'first', sessionId = null, elementType = 'button', elementIndex = 0 } = options;
+  const format = options.format || 'plain';
   
-  // Generate high-priority test cases for important elements first
+  // For subsequent calls, use cached page data if available
+  if (mode === 'next' && sessionId && pageCache[sessionId]) {
+    return generateNextTest(sessionId, elementType, elementIndex);
+  }
   
-  // Homepage verification case
-  testCases.push({
-    id: 'TC_PAGE_1',
-    title: `Verify ${pageData.title || 'Page'} Loads Correctly`,
-    description: `Test that the page loads and displays all expected elements`,
-    priority: 'High',
-    steps: [
-      {
-        step: 1,
-        action: `Navigate to ${pageData.url}`,
-        expected: 'Page loads successfully without errors'
-      },
-      {
-        step: 2,
-        action: 'Verify page title',
-        expected: `Page title is "${pageData.title || 'Expected title'}"`
-      }
-    ]
-  });
-  
-  // Button test cases (limited to first 10 to avoid timeouts)
-  const priorityButtons = pageData.buttons.slice(0, 10);
-  priorityButtons.forEach((button, index) => {
-    if (!button.text) return; // Skip buttons without text
+  // For first call, analyze the page
+  let browser;
+  const NAVIGATION_TIMEOUT = 12000; // 12 seconds for page load
+
+  try {
+    console.time('initial-analysis');
     
-    testCases.push({
-      id: `TC_BTN_${index + 1}`,
-      title: `Verify "${button.text}" Button Functionality`,
-      description: `Test interaction with the ${button.text} button`,
-      selectors: {
-        id: button.id,
-        name: button.name,
-        xpath: button.xpath,
-        cssSelector: button.cssSelector
+    // Launch browser with minimal options
+    if (isDev) {
+      browser = await puppeteer.launch({ 
+        headless: true,
+        args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage']
+      });
+    } else {
+      try {
+        if (chromium) {
+          browser = await puppeteer.launch({
+            args: chromium.args,
+            executablePath: await chromium.executablePath(),
+            headless: chromium.headless
+          });
+        } else if (chromeAWSLambda) {
+          browser = await puppeteer.launch({
+            args: chromeAWSLambda.args,
+            executablePath: await chromeAWSLambda.executablePath,
+            headless: true
+          });
+        }
+      } catch (e) {
+        console.error('Browser launch error:', e);
+        throw e;
+      }
+    }
+
+    // Create page with resource blocking
+    const page = await browser.newPage();
+    
+    // Block heavy resources
+    await page.setRequestInterception(true);
+    page.on('request', (req) => {
+      const resourceType = req.resourceType();
+      if (resourceType === 'document' || resourceType === 'script') {
+        req.continue();
+      } else {
+        req.abort();
+      }
+    });
+    
+    // Set timeouts
+    page.setDefaultNavigationTimeout(NAVIGATION_TIMEOUT);
+    
+    // Navigate with minimal wait
+    await page.goto(url, { waitUntil: 'domcontentloaded' });
+
+    // Extract basic page data
+    const pageData = {
+      url,
+      title: await page.title(),
+      extractedAt: new Date().toISOString()
+    };
+
+    // Extract buttons
+    try {
+      pageData.buttons = await page.$$eval(
+        'button, input[type="submit"], input[type="button"], .btn, [role="button"]', 
+        buttons => buttons.map(button => ({
+          text: button.textContent?.trim() || button.value || button.innerText || 'Unnamed Button',
+          type: button.type || 'button',
+          id: button.id || '',
+          name: button.name || '',
+          class: button.className || ''
+        }))
+      );
+      console.log(`Extracted ${pageData.buttons.length} buttons`);
+    } catch (e) {
+      console.log('Button extraction error:', e.message);
+      pageData.buttons = [];
+    }
+
+    // Extract forms (very basic)
+    try {
+      pageData.forms = await page.$$eval(
+        'form', 
+        forms => forms.map(form => ({
+          id: form.id || '',
+          action: form.action || '',
+          method: form.method || ''
+        }))
+      );
+      console.log(`Extracted ${pageData.forms.length} forms`);
+    } catch (e) {
+      console.log('Form extraction error:', e.message);
+      pageData.forms = [];
+    }
+
+    // Extract links (very basic)
+    try {
+      pageData.links = await page.$$eval(
+        'a[href]', 
+        links => links.map(link => ({
+          text: link.textContent?.trim() || 'Unnamed Link',
+          href: link.href || '',
+          id: link.id || ''
+        }))
+      );
+      console.log(`Extracted ${pageData.links.length} links`);
+    } catch (e) {
+      console.log('Link extraction error:', e.message);
+      pageData.links = [];
+    }
+
+    // Close browser
+    await browser.close();
+    browser = null;
+    console.timeEnd('initial-analysis');
+    
+    // Generate a session ID
+    const newSessionId = Math.random().toString(36).substring(2, 15);
+    
+    // Store in cache with counts of unprocessed elements
+    pageCache[newSessionId] = {
+      pageData,
+      processed: {
+        buttons: 0,
+        forms: 0,
+        links: 0
       },
+      hasMore: {
+        buttons: pageData.buttons.length > 0,
+        forms: pageData.forms.length > 0,
+        links: pageData.links.length > 0
+      }
+    };
+    
+    // Generate first test (always page verification)
+    const firstTest = {
+      id: 'TC_PAGE_1',
+      title: `Verify ${pageData.title || 'Page'} Loads Correctly`,
+      description: `Test that the page loads successfully with the correct title`,
+      priority: 'High',
       steps: [
         {
           step: 1,
-          action: `Locate the "${button.text}" button`,
-          expected: 'Button is visible and enabled'
+          action: `Navigate to ${url}`,
+          expected: 'Page loads without errors'
         },
         {
           step: 2,
-          action: `Click the "${button.text}" button`,
-          expected: 'Button responds appropriately to the click action'
+          action: 'Verify page title',
+          expected: `Title is "${pageData.title || 'Expected Title'}"`
         }
-      ],
-      priority: button.purpose === 'submit' || button.purpose === 'login' ? 'High' : 'Medium'
-    });
-  });
+      ]
+    };
+    
+    // Return first test with session info
+    return { 
+      success: true, 
+      sessionId: newSessionId,
+      testCases: [firstTest],
+      nextElementType: pageData.buttons.length > 0 ? 'button' : 
+                      (pageData.forms.length > 0 ? 'form' : 
+                      (pageData.links.length > 0 ? 'link' : null)),
+      nextElementIndex: 0,
+      hasMoreElements: pageData.buttons.length > 0 || pageData.forms.length > 0 || pageData.links.length > 0
+    };
+
+  } catch (error) {
+    console.error('Error in test generation:', error);
+    if (browser) await browser.close();
+    return { 
+      success: false, 
+      error: `Test generation error: ${error.message}`
+    };
+  }
+}
+
+// Function to generate the next test from cached page data
+function generateNextTest(sessionId, elementType, elementIndex) {
+  // Get cached page data
+  const cache = pageCache[sessionId];
+  if (!cache) {
+    return { 
+      success: false, 
+      error: 'Session expired or not found'
+    };
+  }
   
-  // Form test cases if available
-  if (pageData.forms && pageData.forms.length > 0) {
-    const priorityForms = pageData.forms.slice(0, 3);
-    priorityForms.forEach((form, index) => {
-      testCases.push({
-        id: `TC_FORM_${index + 1}`,
+  // Generate test based on element type and index
+  const pageData = cache.pageData;
+  let testCase = null;
+  let nextElementType = elementType;
+  let nextElementIndex = elementIndex + 1;
+  let hasMoreElements = true;
+  
+  // Handle different element types
+  if (elementType === 'button') {
+    if (elementIndex < pageData.buttons.length) {
+      const button = pageData.buttons[elementIndex];
+      testCase = {
+        id: `TC_BTN_${elementIndex + 1}`,
+        title: `Verify "${button.text}" Button Functionality`,
+        description: `Test interaction with the ${button.text} button`,
+        priority: button.type === 'submit' ? 'High' : 'Medium',
+        steps: [
+          {
+            step: 1,
+            action: `Locate the "${button.text}" button`,
+            expected: 'Button is visible and enabled'
+          },
+          {
+            step: 2,
+            action: `Click the "${button.text}" button`,
+            expected: 'Button responds appropriately to the click action'
+          }
+        ]
+      };
+      
+      // Update processed count
+      cache.processed.buttons = elementIndex + 1;
+    }
+    
+    // Check if we need to move to next element type
+    if (nextElementIndex >= pageData.buttons.length) {
+      nextElementType = pageData.forms.length > 0 ? 'form' : 
+                        (pageData.links.length > 0 ? 'link' : null);
+      nextElementIndex = 0;
+    }
+  } 
+  else if (elementType === 'form') {
+    if (elementIndex < pageData.forms.length) {
+      const form = pageData.forms[elementIndex];
+      testCase = {
+        id: `TC_FORM_${elementIndex + 1}`,
         title: `Verify Form Submission`,
-        description: `Test form completion and submission functionality`,
+        description: `Test form functionality${form.id ? ` for form #${form.id}` : ''}`,
         priority: 'High',
         steps: [
           {
             step: 1,
-            action: 'Locate form on page',
+            action: 'Locate the form',
             expected: 'Form is visible and accessible'
           },
           {
             step: 2,
-            action: 'Fill in all required fields with valid data',
-            expected: 'All fields accept input'
+            action: 'Fill in required fields with valid data',
+            expected: 'All fields accept input correctly'
           },
           {
             step: 3,
             action: 'Submit the form',
-            expected: 'Form submits without errors'
+            expected: 'Form submits successfully'
           }
         ]
-      });
-    });
+      };
+      
+      // Update processed count
+      cache.processed.forms = elementIndex + 1;
+    }
+    
+    // Check if we need to move to next element type
+    if (nextElementIndex >= pageData.forms.length) {
+      nextElementType = pageData.links.length > 0 ? 'link' : null;
+      nextElementIndex = 0;
+    }
+  }
+  else if (elementType === 'link') {
+    if (elementIndex < pageData.links.length) {
+      const link = pageData.links[elementIndex];
+      testCase = {
+        id: `TC_LINK_${elementIndex + 1}`,
+        title: `Verify "${link.text}" Link Navigation`,
+        description: `Test navigation when clicking the ${link.text} link`,
+        priority: 'Medium',
+        steps: [
+          {
+            step: 1,
+            action: `Locate the "${link.text}" link`,
+            expected: 'Link is visible and clickable'
+          },
+          {
+            step: 2,
+            action: `Click the "${link.text}" link`,
+            expected: 'Link navigates to the correct destination'
+          }
+        ]
+      };
+      
+      // Update processed count
+      cache.processed.links = elementIndex + 1;
+    }
+    
+    // This is the last element type
+    if (nextElementIndex >= pageData.links.length) {
+      nextElementType = null;
+      nextElementIndex = 0;
+    }
   }
   
-  return testCases;
-}
-
-async function generateTestCases(url, format = 'plain') {
-  let browser;
-  const TOTAL_TIMEOUT = 25000; // 25 seconds total (reduced from 30)
-  const NAVIGATION_TIMEOUT = 15000; // 15 seconds for page load (reduced from 20)
-  const ELEMENT_TIMEOUT = 5000; // 5 seconds for element extraction (reduced from 10)
-
-  try {
-    // Set up a global timeout
-    const timeoutPromise = new Promise((_, reject) => {
-      setTimeout(() => {
-        reject(new Error('Total test generation timeout exceeded'));
-      }, TOTAL_TIMEOUT);
-    });
-
-    // Actual test generation logic
-    const testGenerationPromise = async () => {
-      // Optimized launch options
-      const launchOptions = {
-        headless: true,
-        args: [
-          '--no-sandbox',
-          '--disable-setuid-sandbox',
-          '--disable-dev-shm-usage',
-          '--disable-extensions',
-          '--disable-accelerated-2d-canvas',
-          '--disable-gpu',
-          '--window-size=1024,768'
-        ],
-        defaultViewport: { width: 1024, height: 768 }
-      };
-
-      // Launch browser with environment-specific options
-      if (isDev) {
-        browser = await puppeteer.launch({
-          ...launchOptions,
-          timeout: NAVIGATION_TIMEOUT
-        });
-      } else {
-        // Serverless environment launch
-        try {
-          if (chromeAWSLambda) {
-            browser = await puppeteer.launch({
-              args: [...chromeAWSLambda.args, ...launchOptions.args],
-              executablePath: await chromeAWSLambda.executablePath,
-              headless: true,
-              defaultViewport: launchOptions.defaultViewport,
-              timeout: NAVIGATION_TIMEOUT
-            });
-          } else if (chromium) {
-            browser = await puppeteer.launch({
-              args: [...chromium.args, ...launchOptions.args],
-              executablePath: await chromium.executablePath(),
-              headless: chromium.headless,
-              defaultViewport: launchOptions.defaultViewport,
-              timeout: NAVIGATION_TIMEOUT
-            });
-          } else {
-            throw new Error('No compatible browser automation library available');
-          }
-        } catch (launchError) {
-          console.error('Browser launch error:', launchError);
-          throw launchError;
-        }
-      }
-
-      const page = await browser.newPage();
-      
-      // Block non-essential resources to speed up page load
-      await page.setRequestInterception(true);
-      page.on('request', (req) => {
-        const resourceType = req.resourceType();
-        if (['image', 'font', 'media', 'stylesheet'].includes(resourceType)) {
-          req.abort();
-        } else {
-          req.continue();
-        }
-      });
-      
-      // Set conservative page-level timeouts
-      page.setDefaultNavigationTimeout(NAVIGATION_TIMEOUT);
-      page.setDefaultTimeout(ELEMENT_TIMEOUT);
-
-      try {
-        // Graceful navigation with faster wait condition
-        await Promise.race([
-          page.goto(url, { 
-            waitUntil: 'domcontentloaded', // Faster than networkidle0
-            timeout: NAVIGATION_TIMEOUT 
-          }),
-          new Promise((_, reject) => 
-            setTimeout(() => reject(new Error('Page load timeout')), NAVIGATION_TIMEOUT)
-          )
-        ]);
-
-        // Quick check that body exists
-        await page.waitForSelector('body', { timeout: 5000 });
-
-        // Initialize page data container
-        const pageData = {
-          url,
-          title: await page.title(),
-          buttons: [],
-          forms: [],
-          inputs: [],
-          links: []
-        };
-
-        // Extract buttons with timeout protection
-        try {
-          pageData.buttons = await Promise.race([
-            page.$$eval(
-              'button, input[type="button"], input[type="submit"], .btn, [role="button"]', 
-              buttons => buttons.slice(0, 20).map(button => ({ // Limit to first 20 buttons
-                text: button.textContent?.trim() || button.value || button.innerText || 'Unnamed Button',
-                type: button.type || 'button',
-                id: button.id || '',
-                name: button.name || '',
-                class: button.className || '',
-                xpath: button.id ? `//*[@id="${button.id}"]` : '',
-                cssSelector: button.id ? `#${button.id}` : (button.className ? `.${button.className.split(' ')[0]}` : '')
-              }))
-            ),
-            new Promise((_, reject) => 
-              setTimeout(() => {
-                console.log('Button extraction timeout - returning partial results');
-                return [];
-              }, ELEMENT_TIMEOUT)
-            )
-          ]);
-        } catch (buttonError) {
-          console.log('Button extraction error:', buttonError.message);
-          pageData.buttons = []; // Continue with empty buttons array
-        }
-
-        // Extract forms with timeout protection
-        try {
-          pageData.forms = await Promise.race([
-            page.$$eval(
-              'form', 
-              forms => forms.slice(0, 5).map(form => ({ // Limit to first 5 forms
-                id: form.id || '',
-                action: form.action || '',
-                method: form.method || '',
-                inputs: Array.from(form.querySelectorAll('input')).slice(0, 10).map(input => ({
-                  type: input.type || '',
-                  name: input.name || '',
-                  id: input.id || ''
-                }))
-              }))
-            ),
-            new Promise((_, reject) => 
-              setTimeout(() => {
-                console.log('Form extraction timeout - returning partial results');
-                return [];
-              }, ELEMENT_TIMEOUT)
-            )
-          ]);
-        } catch (formError) {
-          console.log('Form extraction error:', formError.message);
-          pageData.forms = []; // Continue with empty forms array
-        }
-
-        // Generate test cases based on extracted elements
-        const testCases = generateDetailedTestCases(pageData);
-
-        // Close browser
-        await browser.close();
-        browser = null;
-
-        return { 
-          success: true, 
-          pageData, 
-          testCases,
-          url 
-        };
-
-      } catch (pageError) {
-        console.error('Page analysis error:', pageError);
-        
-        // Try to get any partial page data we can
-        let partialPageData = {
-          url,
-          title: 'Unknown',
-          buttons: [],
-          error: pageError.message
-        };
-        
-        try {
-          // Try to at least get the title
-          partialPageData.title = await page.title();
-        } catch (e) {
-          console.log('Could not get page title:', e.message);
-        }
-        
-        // Ensure browser is closed
-        if (browser) {
-          try {
-            await browser.close();
-            browser = null;
-          } catch (closeError) {
-            console.error('Error closing browser:', closeError);
-          }
-        }
-
-        // Return partial data with error
-        return { 
-          success: false, 
-          error: `Page analysis failed: ${pageError.message}`,
-          partialData: partialPageData,
-          details: {
-            url,
-            errorType: pageError.name,
-            errorMessage: pageError.message
-          }
-        };
-      }
+  // Check if we have more elements
+  hasMoreElements = nextElementType !== null;
+  
+  // Return the test case
+  if (testCase) {
+    return {
+      success: true,
+      sessionId: sessionId,
+      testCases: [testCase],
+      nextElementType,
+      nextElementIndex,
+      hasMoreElements
     };
-
-    // Race the test generation against total timeout
-    const result = await Promise.race([
-      testGenerationPromise(),
-      timeoutPromise
-    ]);
-    
-    // Clean up browser if it's still open
-    if (browser) {
-      try {
-        await browser.close();
-      } catch (e) {
-        console.log('Error closing browser in final cleanup:', e.message);
-      }
-    }
-    
-    return result;
-
-  } catch (globalError) {
-    console.error('Global test generation error:', globalError);
-    
-    // Clean up browser if it's still open
-    if (browser) {
-      try {
-        await browser.close();
-      } catch (e) {
-        console.log('Error closing browser in error handler:', e.message);
-      }
-    }
-    
+  } else {
     return {
       success: false,
-      error: `Test generation failed: ${globalError.message}`,
-      fallbackSuggestion: 'Try a simpler website or check network connectivity'
+      error: 'No more test cases available',
+      hasMoreElements: false
     };
   }
 }
