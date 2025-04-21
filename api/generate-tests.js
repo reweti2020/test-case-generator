@@ -1,9 +1,8 @@
 // api/generate-tests.js
 const path = require('path');
 
-// Adjust the path to find testGen.js
-const utilsPath = path.join(process.cwd(), 'src', 'utils');
-const { generateTestCases } = require('../src/utils/testGen');
+// Use consistent path resolution that works in both development and production
+const { generateTestCases } = require(path.join(process.cwd(), 'src', 'utils', 'testGen'));
 
 // Vercel serverless function with increased timeout handling
 module.exports = async (req, res) => {
@@ -32,6 +31,8 @@ module.exports = async (req, res) => {
     // Validate URL format
     new URL(url);
     
+    console.log(`Processing request for URL: ${url} with format: ${format || 'plain'}`);
+    
     // Create a timeout promise to prevent exceeding Vercel's function execution time
     const timeoutPromise = new Promise((_, reject) => {
       setTimeout(() => reject(new Error('Request timeout - URL analysis took too long')), 25000);
@@ -43,6 +44,7 @@ module.exports = async (req, res) => {
       timeoutPromise
     ]);
     
+    console.log(`Successfully generated test cases for ${url}`);
     return res.status(200).json(result);
   } catch (error) {
     console.error('Error generating test cases:', error);
