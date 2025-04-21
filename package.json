@@ -1,22 +1,22 @@
 {
   "name": "test-case-generator",
   "version": "1.0.0",
-  "description": "Generate test cases from any URL",
-  "scripts": {
-    "dev": "vercel dev",
-    "build": "mkdir -p public && cp index.html public/index.html",
-    "test": "echo \"No tests specified\" && exit 0"
-  },
+  "description": "Automatically generate test cases from web pages",
+  "main": "index.js",
   "dependencies": {
-    "puppeteer-core": "^10.4.0",
-    "chrome-aws-lambda": "^10.1.0",
-    "@sparticuz/chromium-min": "^110.0.1"
-  },
-  "devDependencies": {
-    "puppeteer": "^10.4.0",
-    "vercel": "^29.1.1"
+    "axios": "^1.3.4",
+    "cheerio": "^1.0.0-rc.12",
+    "playwright-core": "^1.33.0",
+    "@sparticuz/chromium-min": "^110.0.1",
+    "stripe": "^12.0.0"
   },
   "engines": {
-    "node": ">=16.x"
-  }
+    "node": "18.x"
+  },
+  "scripts": {
+    "start": "node index.js",
+    "dev": "nodemon index.js"
+  },
+  "author": "",
+  "license": "MIT"
 }
