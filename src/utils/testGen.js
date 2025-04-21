@@ -24,182 +24,252 @@ if (isDev) {
   }
 }
 
-async function generateTestCases(url, format = 'plain') {
-  let browser;
-  
+// Utility function to generate XPath
+function generateXPath(element) {
   try {
-    if (isDev) {
-      // Local development
-      browser = await puppeteer.launch({ 
-        headless: true,
-        args: ['--no-sandbox', '--disable-setuid-sandbox']
-      });
-    } else {
-      // Vercel serverless environment
-      try {
-        // First try chrome-aws-lambda if available
-        if (chromeAWSLambda) {
-          browser = await puppeteer.launch({
-            args: chromeAWSLambda.args,
-            executablePath: await chromeAWSLambda.executablePath,
-            headless: true,
-          });
-        } else if (chromium) {
-          // Fallback to @sparticuz/chromium-min
-          browser = await puppeteer.launch({
-            args: chromium.args,
-            executablePath: await chromium.executablePath(),
-            headless: chromium.headless,
-          });
-        } else {
-          throw new Error('No compatible browser automation library available');
-        }
-      } catch (error) {
-        console.log('Browser launch error:', error);
-        throw error;
-      }
+    let path = '';
+    while (element.parentElement && element.parentElement.tagName !== 'BODY') {
+      const siblings = Array.from(element.parentElement.children);
+      const index = siblings.indexOf(element) + 1;
+      path = `/${element.tagName.toLowerCase()}[${index}]${path}`;
+      element = element.parentElement;
     }
-    
-    const page = await browser.newPage();
-    console.log(`Navigating to ${url}...`);
-    
-    await page.goto(url, { waitUntil: 'networkidle2', timeout: 20000 });
-    
-    // Extract page title
-    const title = await page.title();
-    
-    // Find all buttons
-    const buttons = await page.$$eval('button', buttons => 
-      buttons.map(button => ({
-        text: button.textContent.trim(),
-        id: button.id,
-        type: button.type
-      }))
-    );
-    
-    // Find all links
-    const links = await page.$$eval('a', links => 
-      links.map(link => ({
-        text: link.textContent.trim(),
-        href: link.href
-      }))
-    );
-    
-    // Find all input fields
-    const inputs = await page.$$eval('input', inputs => 
-      inputs.map(input => ({
-        type: input.type,
-        id: input.id,
-        name: input.name,
-        placeholder: input.placeholder
-      }))
-    );
-    
-    // Find all forms
-    const forms = await page.$$eval('form', forms => 
-      forms.map(form => ({
-        id: form.id,
-        action: form.action,
-        method: form.method
-      }))
-    );
-    
-    // Generate test cases
-    const testCases = [
-      `Test Case 1: Verify page loads at ${url} with correct title "${title}"`,
-      `Test Case 2: Verify page contains ${buttons.length} buttons`,
-      `Test Case 3: Verify page contains ${inputs.length} input fields`,
-      `Test Case 4: Verify page contains ${links.length} links`,
-      `Test Case 5: Verify page contains ${forms.length} forms`
-    ];
-    
-    // Generate detailed test cases for each element type
-    buttons.forEach((button, index) => {
-      testCases.push(`Test Case ${6 + index}: Verify button "${button.text}" is clickable`);
-    });
-    
-    inputs.forEach((input, index) => {
-      testCases.push(`Test Case ${6 + buttons.length + index}: Verify input field ${input.id || input.name || input.placeholder || input.type} accepts user input`);
-    });
-    
-    // Format output based on requested format
-    let formattedOutput;
-    
-    if (format === 'katalon') {
-      formattedOutput = formatKatalonTestCases(url, title, buttons, inputs, links, forms);
-    } else if (format === 'maestro') {
-      formattedOutput = formatMaestroTestCases(url, title, buttons, inputs, links, forms);
-    } else {
-      formattedOutput = testCases;
-    }
-    
-    await browser.close();
-    return { success: true, testCases: formattedOutput };
-  } catch (error) {
-    console.error('Error during page processing:', error);
-    if (browser) {
-      try {
-        await browser.close();
-      } catch (e) {
-        console.error('Error closing browser:', e);
-      }
-    }
-    return { success: false, error: error.message };
+    return `//${element.tagName.toLowerCase()}${path}`;
+  } catch {
+    return '';
   }
 }
 
-function formatKatalonTestCases(url, title, buttons, inputs, links, forms) {
-  // Katalon format example (simplified)
-  let katalon = `<?xml version="1.0" encoding="UTF-8"?>
-<TestSuiteEntity>
-   <n>Generated Test Suite for ${url}</n>
-   <testCaseLink>
-      <testCaseId>Test Cases/VerifyPageLoads</testCaseId>
-      <guid>1</guid>
-   </testCaseLink>`;
-  
-  buttons.forEach((button, index) => {
-    katalon += `
-   <testCaseLink>
-      <testCaseId>Test Cases/VerifyButton_${index}</testCaseId>
-      <guid>${index + 2}</guid>
-      <variable>
-         <n>buttonText</n>
-         <value>${button.text}</value>
-      </variable>
-   </testCaseLink>`;
-  });
-  
-  katalon += `
-</TestSuiteEntity>`;
-  
-  return katalon;
+// Utility function to generate CSS Selector
+function generateCSSSelector(element) {
+  try {
+    if (element.id) return `#${element.id}`;
+    if (element.className) return `.${element.className.split(' ').join('.')}`;
+    return '';
+  } catch {
+    return '';
+  }
 }
 
-function formatMaestroTestCases(url, title, buttons, inputs, links, forms) {
-  // Maestro flow format
-  let maestro = `# Generated Maestro flow for ${url}
-appId: ${new URL(url).hostname}
----
-- launchUrl: ${url}
-- assertVisible: ${title}`;
+// Identify button purpose
+function identifyButtonPurpose(button) {
+  const text = (button.text || '').toLowerCase();
+  const classNames = (button.class || '').toLowerCase();
   
-  buttons.forEach(button => {
-    const selector = button.id ? `#${button.id}` : `:text("${button.text}")`;
-    maestro += `
-- tapOn: ${selector}
-- back`;
-  });
-  
-  inputs.forEach(input => {
-    const selector = input.id ? `#${input.id}` : `input[type="${input.type}"]`;
-    maestro += `
-- tapOn: ${selector}
-- inputText: "test input"`;
-  });
-  
-  return maestro;
+  const purposes = {
+    'submit': ['submit', 'send', 'confirm', 'go'],
+    'login': ['log in', 'signin', 'login', 'sign in'],
+    'signup': ['sign up', 'register', 'create account', 'join'],
+    'search': ['search', 'find', 'look up'],
+    'navigation': ['next', 'previous', 'back', 'forward', 'page'],
+    'action': ['add', 'edit', 'delete', 'update', 'create']
+  };
+
+  for (const [purpose, keywords] of Object.entries(purposes)) {
+    if (keywords.some(keyword => text.includes(keyword) || classNames.includes(keyword))) {
+      return purpose;
+    }
+  }
+
+  return 'generic';
 }
 
-// Export for use in API routes
+// Generate comprehensive test cases
+function generateDetailedTestCases(pageData) {
+  const testCases = [];
+
+  // Button interaction test cases
+  pageData.buttons.forEach((button, index) => {
+    testCases.push({
+      id: `TC_BTN_${index + 1}`,
+      title: `Verify ${button.text || 'Button'} Functionality`,
+      description: `Test interaction with button having purpose: ${button.purpose}`,
+      selectors: {
+        id: button.id,
+        name: button.name,
+        xpath: button.xpath,
+        cssSelector: button.cssSelector
+      },
+      steps: [
+        {
+          step: 1,
+          action: `Locate button "${button.text}"`,
+          selector: button.xpath || button.cssSelector,
+          expectedResult: 'Button is visible and enabled',
+          type: 'verify_element'
+        },
+        {
+          step: 2,
+          action: `Click button "${button.text}"`,
+          selector: button.xpath || button.cssSelector,
+          expectedResult: 'Button responds appropriately',
+          type: 'interaction'
+        }
+      ],
+      priority: button.purpose === 'submit' ? 'High' : 'Medium'
+    });
+  });
+
+  // Additional test cases for other elements can be added here
+
+  return testCases;
+}
+
+async function generateTestCases(url, format = 'plain') {
+  let browser;
+  const TOTAL_TIMEOUT = 30000; // 30 seconds total
+  const NAVIGATION_TIMEOUT = 20000; // 20 seconds for page load
+  const ELEMENT_TIMEOUT = 10000; // 10 seconds for element extraction
+
+  try {
+    // Set up a global timeout
+    const timeoutPromise = new Promise((_, reject) => {
+      setTimeout(() => {
+        reject(new Error('Total test generation timeout exceeded'));
+      }, TOTAL_TIMEOUT);
+    });
+
+    // Actual test generation logic
+    const testGenerationPromise = async () => {
+      // Launch browser with specific timeout configurations
+      if (isDev) {
+        browser = await puppeteer.launch({ 
+          headless: true,
+          timeout: NAVIGATION_TIMEOUT,
+          args: ['--no-sandbox', '--disable-setuid-sandbox']
+        });
+      } else {
+        // Serverless environment launch
+        try {
+          if (chromeAWSLambda) {
+            browser = await puppeteer.launch({
+              args: chromeAWSLambda.args,
+              executablePath: await chromeAWSLambda.executablePath,
+              headless: true,
+              timeout: NAVIGATION_TIMEOUT
+            });
+          } else if (chromium) {
+            browser = await puppeteer.launch({
+              args: chromium.args,
+              executablePath: await chromium.executablePath(),
+              headless: chromium.headless,
+              timeout: NAVIGATION_TIMEOUT
+            });
+          } else {
+            throw new Error('No compatible browser automation library available');
+          }
+        } catch (launchError) {
+          console.error('Browser launch error:', launchError);
+          throw launchError;
+        }
+      }
+
+      const page = await browser.newPage();
+      
+      // Set conservative page-level timeouts
+      page.setDefaultNavigationTimeout(NAVIGATION_TIMEOUT);
+      page.setDefaultTimeout(ELEMENT_TIMEOUT);
+
+      try {
+        // Graceful navigation with timeout handling
+        await Promise.race([
+          page.goto(url, { 
+            waitUntil: 'networkidle0',
+            timeout: NAVIGATION_TIMEOUT 
+          }),
+          new Promise((_, reject) => 
+            setTimeout(() => reject(new Error('Page load timeout')), NAVIGATION_TIMEOUT)
+          )
+        ]);
+
+        // Implement fallback if primary wait fails
+        await page.waitForSelector('body', { timeout: ELEMENT_TIMEOUT });
+
+        // Initialize page data container
+        const pageData = {
+          url,
+          title: await page.title(),
+          buttons: [],
+          forms: [],
+          inputs: [],
+          links: []
+        };
+
+        // Parallel element extraction with individual timeouts
+        pageData.buttons = await Promise.race([
+          page.$$eval(
+            'button, input[type="button"], input[type="submit"], .btn, [role="button"]', 
+            buttons => buttons.map(button => ({
+              text: button.textContent.trim() || button.value || button.innerText || 'Unnamed Button',
+              type: button.type || 'button',
+              id: button.id || '',
+              name: button.name || '',
+              class: button.className || '',
+              xpath: generateXPath(button),
+              cssSelector: generateCSSSelector(button),
+              purpose: identifyButtonPurpose({
+                text: button.textContent.trim() || button.value || button.innerText,
+                class: button.className
+              })
+            }))
+          ),
+          new Promise((_, reject) => 
+            setTimeout(() => reject(new Error('Button extraction timeout')), ELEMENT_TIMEOUT)
+          )
+        ]);
+
+        // Generate test cases based on extracted elements
+        const testCases = generateDetailedTestCases(pageData);
+
+        // Close browser
+        await browser.close();
+
+        return { 
+          success: true, 
+          pageData, 
+          testCases,
+          url 
+        };
+
+      } catch (pageError) {
+        console.error('Page analysis error:', pageError);
+        
+        // Ensure browser is closed
+        if (browser) {
+          try {
+            await browser.close();
+          } catch (closeError) {
+            console.error('Error closing browser:', closeError);
+          }
+        }
+
+        return { 
+          success: false, 
+          error: `Page analysis failed: ${pageError.message}`,
+          details: {
+            url,
+            errorType: pageError.name,
+            errorMessage: pageError.message
+          }
+        };
+      }
+    };
+
+    // Race the test generation against total timeout
+    return await Promise.race([
+      testGenerationPromise(),
+      timeoutPromise
+    ]);
+
+  } catch (globalError) {
+    console.error('Global test generation error:', globalError);
+    return {
+      success: false,
+      error: `Test generation failed: ${globalError.message}`,
+      fallbackSuggestion: 'Try a simpler website or check network connectivity'
+    };
+  }
+}
+
+// Export the function for use in API routes
 module.exports = { generateTestCases };
