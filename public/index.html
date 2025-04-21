@@ -77,25 +77,57 @@
   </div>
 
   <script>
-    document.getElementById('url-form').addEventListener('submit', async (e) => {
+    document.addEventListener('DOMContentLoaded', function() {
+    // Get elements
+    const urlForm = document.getElementById('url-form');
+    const urlInput = document.getElementById('url-input');
+    const formatSelect = document.getElementById('format-select');
+    const output = document.getElementById('output');
+    
+    // Add container for "Generate Next Test" button
+    const nextTestContainer = document.createElement('div');
+    nextTestContainer.className = 'next-test-container';
+    nextTestContainer.style.display = 'none';
+    nextTestContainer.innerHTML = `
+      <button id="generate-next-test" class="button-secondary">Generate Next Test</button>
+      <span id="element-info"></span>
+    `;
+    document.querySelector('.container').insertBefore(nextTestContainer, output);
+    
+    // Current session state
+    const sessionState = {
+      sessionId: null,
+      nextElementType: null,
+      nextElementIndex: 0,
+      hasMoreElements: false,
+      testCases: []
+    };
+    
+    // Handle form submission - generate first test
+    urlForm.addEventListener('submit', async (e) => {
       e.preventDefault();
-      const url = document.getElementById('url-input').value;
-      const format = document.getElementById('format-select').value;
-      const output = document.getElementById('output');
       
-      output.innerHTML = '⏳ Generating test cases...';
-
+      // Reset session state
+      sessionState.sessionId = null;
+      sessionState.testCases = [];
+      nextTestContainer.style.display = 'none';
+      
+      // Show loading state
+      output.innerHTML = '<div class="spinner"></div><p>Analyzing website...</p>';
+      
       try {
-        // Add a client-side timeout as well
+        // Add a client-side timeout
         const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 30000);
+        const timeoutId = setTimeout(() => controller.abort(), 25000); // 25 second timeout
         
-        const response = await fetch('/api/generate-tests', {
+        const response = await fetch('/api/generate-incremental', {
           method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({ url, format }),
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            url: urlInput.value,
+            mode: 'first',
+            format: formatSelect.value
+          }),
           signal: controller.signal
         });
         
@@ -104,23 +136,135 @@
         if (!response.ok) {
           throw new Error(`Server responded with status: ${response.status}`);
         }
-
+        
         const data = await response.json();
         
         if (data.success) {
-          if (Array.isArray(data.testCases)) {
-            output.innerHTML = data.testCases.map(tc => `<p>✅ ${tc}</p>`).join('');
-          } else {
-            // For Katalon or Maestro format (text-based)
-            output.innerHTML = `<pre>${data.testCases}</pre>`;
+          // Store session info
+          sessionState.sessionId = data.sessionId;
+          sessionState.nextElementType = data.nextElementType;
+          sessionState.nextElementIndex = data.nextElementIndex;
+          sessionState.hasMoreElements = data.hasMoreElements;
+          sessionState.testCases = sessionState.testCases.concat(data.testCases);
+          
+          // Render test cases
+          renderTestCases(data.testCases);
+          
+          // Show "Generate Next Test" button if more elements are available
+          if (data.hasMoreElements) {
+            nextTestContainer.style.display = 'block';
+            updateElementInfo();
           }
         } else {
           output.innerHTML = `<p>❌ Error: ${data.error}</p>`;
         }
       } catch (error) {
-        output.innerHTML = `<p>❌ Error: ${error.message}</p>`;
+        if (error.name === 'AbortError') {
+          output.innerHTML = `<p>❌ Error: Request timed out. Please try a simpler website.</p>`;
+        } else {
+          output.innerHTML = `<p>❌ Error: ${error.message}</p>`;
+        }
       }
     });
+    
+    // Handle "Generate Next Test" button click
+    document.getElementById('generate-next-test').addEventListener('click', async () => {
+      if (!sessionState.sessionId || !sessionState.hasMoreElements) return;
+      
+      // Show loading state for next test
+      const currentContent = output.innerHTML;
+      output.innerHTML += '<div class="spinner"></div><p>Generating next test...</p>';
+      
+      try {
+        const response = await fetch('/api/generate-incremental', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            mode: 'next',
+            sessionId: sessionState.sessionId,
+            elementType: sessionState.nextElementType,
+            elementIndex: sessionState.nextElementIndex,
+            format: formatSelect.value
+          })
+        });
+        
+        if (!response.ok) {
+          throw new Error(`Server responded with status: ${response.status}`);
+        }
+        
+        const data = await response.json();
+        
+        if (data.success) {
+          // Update session info
+          sessionState.nextElementType = data.nextElementType;
+          sessionState.nextElementIndex = data.nextElementIndex;
+          sessionState.hasMoreElements = data.hasMoreElements;
+          sessionState.testCases = sessionState.testCases.concat(data.testCases);
+          
+          // Render the new test case
+          output.innerHTML = currentContent;
+          renderTestCases(data.testCases);
+          
+          // Update "Generate Next Test" button visibility
+          if (data.hasMoreElements) {
+            nextTestContainer.style.display = 'block';
+            updateElementInfo();
+          } else {
+            nextTestContainer.style.display = 'none';
+          }
+        } else {
+          output.innerHTML = currentContent + `<p>❌ Error: ${data.error}</p>`;
+          if (!data.hasMoreElements) {
+            nextTestContainer.style.display = 'none';
+          }
+        }
+      } catch (error) {
+        output.innerHTML = currentContent + `<p>❌ Error: ${error.message}</p>`;
+      }
+    });
+    
+    // Function to render test cases
+    function renderTestCases(testCases) {
+      if (!testCases || testCases.length === 0) return;
+      
+      testCases.forEach(testCase => {
+        const testCaseHtml = `
+          <div class="test-case">
+            <h3>${testCase.id}: ${testCase.title}
+              <span class="test-case-priority priority-${testCase.priority.toLowerCase()}">${testCase.priority}</span>
+            </h3>
+            <div class="test-case-description">${testCase.description}</div>
+            <div class="test-steps">
+              <div class="test-step">
+                <div class="step-number">#</div>
+                <div class="step-action"><strong>Action</strong></div>
+                <div class="step-expected"><strong>Expected Result</strong></div>
+              </div>
+              ${testCase.steps.map(step => `
+                <div class="test-step">
+                  <div class="step-number">${step.step}</div>
+                  <div class="step-action">${step.action}</div>
+                  <div class="step-expected">${step.expected}</div>
+                </div>
+              `).join('')}
+            </div>
+          </div>
+        `;
+        
+        output.innerHTML += testCaseHtml;
+      });
+    }
+    
+    // Update element info text
+    function updateElementInfo() {
+      const elementInfo = document.getElementById('element-info');
+      if (sessionState.nextElementType) {
+        elementInfo.textContent = `Next: ${sessionState.nextElementType} #${sessionState.nextElementIndex + 1}`;
+      } else {
+        elementInfo.textContent = '';
+      }
+    }
+  });
   </script>
 </body>
 </html>
