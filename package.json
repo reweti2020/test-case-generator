@@ -1,24 +1,22 @@
 {
   "name": "test-case-generator",
   "version": "1.0.0",
-  "description": "A tool that generates test cases for web applications",
-  "main": "index.js",
+  "description": "Generate test cases from any URL",
   "scripts": {
-    "start": "node index.js",
-    "dev": "NODE_ENV=development node index.js",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "dev": "vercel dev",
+    "build": "mkdir -p public && cp index.html public/index.html",
+    "test": "echo \"No tests specified\" && exit 0"
   },
   "dependencies": {
-    "puppeteer-core": "^19.7.0",
-    "@sparticuz/chromium-min": "^110.0.1",
-    "chrome-aws-lambda": "^10.1.0"
+    "puppeteer-core": "^10.4.0",
+    "chrome-aws-lambda": "^10.1.0",
+    "@sparticuz/chromium-min": "^110.0.1"
   },
   "devDependencies": {
-    "puppeteer": "^19.7.0"
+    "puppeteer": "^10.4.0",
+    "vercel": "^29.1.1"
   },
   "engines": {
-    "node": "18.x"
-  },
-  "author": "",
-  "license": "MIT"
+    "node": ">=16.x"
+  }
 }
