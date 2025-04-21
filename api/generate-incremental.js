@@ -1,16 +1,45 @@
-// api/generate-incremental.js
+/**
+ * API endpoint for incremental test case generation
+ */
 const { generateTestCases } = require('../testGen');
+
+// Helper function to verify user subscription
+async function verifySubscription(userId) {
+  // This would typically query your database or auth service
+  // Placeholder implementation
+  if (!userId) return false;
+  
+  try {
+    // Example implementation - replace with your actual auth check
+    // const user = await db.users.findOne({ id: userId });
+    // return user?.subscription?.status === 'active';
+    
+    // For demo purposes, checking a dummy userId
+    return userId === 'premium-user-123';
+  } catch (error) {
+    console.error('Error verifying subscription:', error);
+    return false;
+  }
+}
 
 module.exports = async (req, res) => {
   const { url, mode, sessionId, elementType, elementIndex, format } = req.body;
   
+  // Get user information from request
+  const userId = req.headers.authorization?.split(' ')[1];
+  
   try {
+    // Check if user has premium subscription
+    const isPremium = await verifySubscription(userId);
+    const userPlan = isPremium ? 'pro' : 'free';
+    
     const options = {
       mode: mode || 'first',
       sessionId,
       elementType,
       elementIndex: elementIndex ? parseInt(elementIndex) : 0,
-      format: format || 'plain'
+      format: format || 'plain',
+      userPlan
     };
     
     // For first request, URL is required
@@ -31,6 +60,29 @@ module.exports = async (req, res) => {
     
     // Generate test cases
     const result = await generateTestCases(url, options);
+    
+    // Check if premium format was requested by non-premium user
+    if (format && ['katalon', 'maestro', 'testrail'].includes(format) && !isPremium) {
+      return res.status(200).json({
+        success: false,
+        error: 'Premium format requires a Pro subscription',
+        upgradeRequired: true
+      });
+    }
+    
+    // Check session duration for free users (10 minutes)
+    if (userPlan === 'free' && mode === 'next' && sessionId) {
+      // This would check how long the session has been active
+      // Placeholder implementation - in production, store session creation time
+      // const sessionAge = Date.now() - sessionStartTime; 
+      // if (sessionAge > 10 * 60 * 1000) { // 10 minutes
+      //   return res.status(200).json({
+      //     success: false,
+      //     error: 'Free plan session duration limit reached',
+      //     upgradeRequired: true
+      //   });
+      // }
+    }
     
     // Return the result
     res.status(200).json(result);
