@@ -1,270 +1,167 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Test Case Generator</title>
-  <style>
-    body {
-      font-family: sans-serif;
-      background: #f9f9f9;
-      padding: 2rem;
-    }
-    .container {
-      max-width: 800px;
-      margin: auto;
-      background: white;
-      padding: 2rem;
-      border-radius: 12px;
-      box-shadow: 0 2px 10px rgba(0,0,0,0.1);
-    }
-    input, select {
-      width: 100%;
-      padding: 0.75rem;
-      margin-bottom: 1rem;
-      font-size: 1rem;
-      border: 1px solid #ccc;
-      border-radius: 4px;
-    }
-    button {
-      padding: 0.75rem 1.5rem;
-      font-size: 1rem;
-      background: #0070f3;
-      color: white;
-      border: none;
-      border-radius: 6px;
-      cursor: pointer;
-      transition: background-color 0.2s;
-    }
-    button:hover {
-      background: #0059c1;
-    }
-    #output {
-      margin-top: 1.5rem;
-      max-height: 500px;
-      overflow-y: auto;
-      border: 1px solid #eee;
-      padding: 1rem;
-      border-radius: 4px;
-    }
-    pre {
-      white-space: pre-wrap;
-      word-break: break-all;
-      background: #f5f5f5;
-      padding: 1rem;
-      border-radius: 4px;
-      overflow-x: auto;
-    }
-    h1 {
-      color: #333;
-      margin-top: 0;
-    }
-  </style>
+  <link rel="stylesheet" href="css/styles.css">
+  <script src="js/main.js" defer></script>
 </head>
 <body>
-  <div class="container">
-    <h1>🧪 Test Case Generator</h1>
-    <form id="url-form">
-      <input type="text" id="url-input" placeholder="Enter website URL" required />
-      <select id="format-select">
-        <option value="plain">Plain Text</option>
-        <option value="katalon">Katalon Format</option>
-        <option value="maestro">Maestro Format</option>
-      </select>
-      <button type="submit">Generate Test Cases</button>
-    </form>
-    <div id="output"></div>
-  </div>
+  <header>
+    <div class="header-content">
+      <h1>Test Case Generator</h1>
+      <p>Automatically generate test cases from any website</p>
+    </div>
+  </header>
 
-  <script>
-    document.addEventListener('DOMContentLoaded', function() {
-    // Get elements
-    const urlForm = document.getElementById('url-form');
-    const urlInput = document.getElementById('url-input');
-    const formatSelect = document.getElementById('format-select');
-    const output = document.getElementById('output');
-    
-    // Add container for "Generate Next Test" button
-    const nextTestContainer = document.createElement('div');
-    nextTestContainer.className = 'next-test-container';
-    nextTestContainer.style.display = 'none';
-    nextTestContainer.innerHTML = `
+  <main class="container">
+    <!-- URL Form -->
+    <section class="url-form-container">
+      <form id="url-form" class="url-form">
+        <div class="input-group">
+          <label for="url-input">Website URL:</label>
+          <input type="url" id="url-input" placeholder="https://example.com" required>
+        </div>
+        
+        <div class="input-group">
+          <label for="format-select">Export Format:</label>
+          <select id="format-select">
+            <option value="plain">Plain Text</option>
+            <option value="json">JSON</option>
+            <option value="html">HTML</option>
+            <option value="csv">CSV</option>
+            <option value="katalon">Katalon Studio</option>
+            <option value="maestro">Maestro Studio</option>
+          </select>
+        </div>
+        
+        <button type="submit" id="generate-button" class="button-primary">Generate Test Cases</button>
+      </form>
+    </section>
+
+    <!-- Upgrade Banner (hidden by default) -->
+    <section id="upgrade-banner" class="upgrade-banner hidden">
+      <div class="upgrade-content">
+        <h3>⭐ Unlock Premium Features</h3>
+        <p>You've reached the limit of the free plan. Upgrade to Pro for unlimited test cases and premium formats.</p>
+        <button id="show-upgrade-modal" class="button-highlight">Upgrade Now</button>
+      </div>
+    </section>
+
+    <!-- Next Test Button Container (hidden by default) -->
+    <section id="next-test-container" class="next-test-container" style="display: none;">
       <button id="generate-next-test" class="button-secondary">Generate Next Test</button>
       <span id="element-info"></span>
-    `;
-    document.querySelector('.container').insertBefore(nextTestContainer, output);
-    
-    // Current session state
-    const sessionState = {
-      sessionId: null,
-      nextElementType: null,
-      nextElementIndex: 0,
-      hasMoreElements: false,
-      testCases: []
-    };
-    
-    // Handle form submission - generate first test
-    urlForm.addEventListener('submit', async (e) => {
-      e.preventDefault();
+    </section>
+
+    <!-- Loading Spinner -->
+    <div id="loading-spinner" class="spinner-container" style="display: none;">
+      <div class="spinner"></div>
+    </div>
+
+    <!-- Output Area -->
+    <section class="output-section">
+      <div class="output-header">
+        <h2>Test Cases</h2>
+        <span id="test-case-counter">0 test cases</span>
+      </div>
+      <div id="output" class="output">
+        <p class="placeholder">Enter a URL and click "Generate Test Cases" to start</p>
+      </div>
+    </section>
+
+    <!-- Download Options (hidden by default) -->
+    <section id="download-container" class="download-container" style="display: none;">
+      <h3>Download Test Cases</h3>
+      <div class="download-buttons">
+        <button id="download-txt" class="button-secondary">Download as TXT</button>
+        <button id="download-json" class="button-secondary">Download as JSON</button>
+        <button id="download-csv" class="button-secondary">Download as CSV</button>
+        <button id="download-html" class="button-secondary">Download as HTML</button>
+        <button id="download-katalon" class="button-secondary">Download as Katalon</button>
+        <button id="download-maestro" class="button-secondary">Download as Maestro</button>
+      </div>
+    </section>
+
+    <!-- QA Services Promo -->
+    <section class="pro-services-banner">
+      <h3>Need Expert QA Support?</h3>
+      <p>Get professional QA consultation from our expert team.</p>
+      <button id="learn-more-qa">Learn More</button>
+    </section>
+  </main>
+
+  <!-- Upgrade Modal (hidden by default) -->
+  <div id="upgrade-modal" class="modal" style="display: none;">
+    <div class="modal-content">
+      <span id="close-upgrade-modal" class="close">&times;</span>
+      <h2>Upgrade Your Plan</h2>
       
-      // Reset session state
-      sessionState.sessionId = null;
-      sessionState.testCases = [];
-      nextTestContainer.style.display = 'none';
+      <div class="plans-container">
+        <!-- Free Plan -->
+        <div class="plan-option" data-plan="free">
+          <h3>Free</h3>
+          <p class="price">$0</p>
+          <ul>
+            <li>10 test cases total</li>
+            <li>Plain text only</li>
+            <li>TXT and JSON downloads</li>
+            <li>Basic element detection</li>
+            <li>10-minute session limit</li>
+          </ul>
+          <p class="current-plan">Current Plan</p>
+        </div>
+
+        <!-- Pro Plan -->
+        <div class="plan-option selected" data-plan="pro">
+          <div class="popular-badge">Popular</div>
+          <h3>Pro</h3>
+          <p class="price">$19.99<span>/month</span></p>
+          <ul>
+            <li>Unlimited test cases</li>
+            <li>All formats (Katalon, Maestro)</li>
+            <li>All download options</li>
+            <li>Enhanced element detection</li>
+            <li>1-hour session duration</li>
+            <li>Priority support</li>
+          </ul>
+          <button class="button-highlight">Recommended</button>
+        </div>
+
+        <!-- Enterprise Plan -->
+        <div class="plan-option" data-plan="enterprise">
+          <h3>Enterprise</h3>
+          <p class="price">Custom</p>
+          <ul>
+            <li>Unlimited with higher resources</li>
+            <li>All formats plus custom formats</li>
+            <li>API access for integration</li>
+            <li>Advanced features</li>
+            <li>Dedicated resources</li>
+            <li>Premium support</li>
+          </ul>
+          <button class="button-secondary">Contact Sales</button>
+        </div>
+      </div>
       
-      // Show loading state
-      output.innerHTML = '<div class="spinner"></div><p>Analyzing website...</p>';
-      
-      try {
-        // Add a client-side timeout
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 25000); // 25 second timeout
-        
-        const response = await fetch('/api/generate-incremental', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            url: urlInput.value,
-            mode: 'first',
-            format: formatSelect.value
-          }),
-          signal: controller.signal
-        });
-        
-        clearTimeout(timeoutId);
-        
-        if (!response.ok) {
-          throw new Error(`Server responded with status: ${response.status}`);
-        }
-        
-        const data = await response.json();
-        
-        if (data.success) {
-          // Store session info
-          sessionState.sessionId = data.sessionId;
-          sessionState.nextElementType = data.nextElementType;
-          sessionState.nextElementIndex = data.nextElementIndex;
-          sessionState.hasMoreElements = data.hasMoreElements;
-          sessionState.testCases = sessionState.testCases.concat(data.testCases);
-          
-          // Render test cases
-          renderTestCases(data.testCases);
-          
-          // Show "Generate Next Test" button if more elements are available
-          if (data.hasMoreElements) {
-            nextTestContainer.style.display = 'block';
-            updateElementInfo();
-          }
-        } else {
-          output.innerHTML = `<p>❌ Error: ${data.error}</p>`;
-        }
-      } catch (error) {
-        if (error.name === 'AbortError') {
-          output.innerHTML = `<p>❌ Error: Request timed out. Please try a simpler website.</p>`;
-        } else {
-          output.innerHTML = `<p>❌ Error: ${error.message}</p>`;
-        }
-      }
-    });
-    
-    // Handle "Generate Next Test" button click
-    document.getElementById('generate-next-test').addEventListener('click', async () => {
-      if (!sessionState.sessionId || !sessionState.hasMoreElements) return;
-      
-      // Show loading state for next test
-      const currentContent = output.innerHTML;
-      output.innerHTML += '<div class="spinner"></div><p>Generating next test...</p>';
-      
-      try {
-        const response = await fetch('/api/generate-incremental', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            mode: 'next',
-            sessionId: sessionState.sessionId,
-            elementType: sessionState.nextElementType,
-            elementIndex: sessionState.nextElementIndex,
-            format: formatSelect.value
-          })
-        });
-        
-        if (!response.ok) {
-          throw new Error(`Server responded with status: ${response.status}`);
-        }
-        
-        const data = await response.json();
-        
-        if (data.success) {
-          // Update session info
-          sessionState.nextElementType = data.nextElementType;
-          sessionState.nextElementIndex = data.nextElementIndex;
-          sessionState.hasMoreElements = data.hasMoreElements;
-          sessionState.testCases = sessionState.testCases.concat(data.testCases);
-          
-          // Render the new test case
-          output.innerHTML = currentContent;
-          renderTestCases(data.testCases);
-          
-          // Update "Generate Next Test" button visibility
-          if (data.hasMoreElements) {
-            nextTestContainer.style.display = 'block';
-            updateElementInfo();
-          } else {
-            nextTestContainer.style.display = 'none';
-          }
-        } else {
-          output.innerHTML = currentContent + `<p>❌ Error: ${data.error}</p>`;
-          if (!data.hasMoreElements) {
-            nextTestContainer.style.display = 'none';
-          }
-        }
-      } catch (error) {
-        output.innerHTML = currentContent + `<p>❌ Error: ${error.message}</p>`;
-      }
-    });
-    
-    // Function to render test cases
-    function renderTestCases(testCases) {
-      if (!testCases || testCases.length === 0) return;
-      
-      testCases.forEach(testCase => {
-        const testCaseHtml = `
-          <div class="test-case">
-            <h3>${testCase.id}: ${testCase.title}
-              <span class="test-case-priority priority-${testCase.priority.toLowerCase()}">${testCase.priority}</span>
-            </h3>
-            <div class="test-case-description">${testCase.description}</div>
-            <div class="test-steps">
-              <div class="test-step">
-                <div class="step-number">#</div>
-                <div class="step-action"><strong>Action</strong></div>
-                <div class="step-expected"><strong>Expected Result</strong></div>
-              </div>
-              ${testCase.steps.map(step => `
-                <div class="test-step">
-                  <div class="step-number">${step.step}</div>
-                  <div class="step-action">${step.action}</div>
-                  <div class="step-expected">${step.expected}</div>
-                </div>
-              `).join('')}
-            </div>
-          </div>
-        `;
-        
-        output.innerHTML += testCaseHtml;
-      });
-    }
-    
-    // Update element info text
-    function updateElementInfo() {
-      const elementInfo = document.getElementById('element-info');
-      if (sessionState.nextElementType) {
-        elementInfo.textContent = `Next: ${sessionState.nextElementType} #${sessionState.nextElementIndex + 1}`;
-      } else {
-        elementInfo.textContent = '';
-      }
-    }
-  });
+      <div class="modal-footer">
+        <button id="confirm-upgrade" class="button-primary">Upgrade Now</button>
+      </div>
+    </div>
+  </div>
+
+  <footer>
+    <p>&copy; 2025 Test Case Generator. All rights reserved.</p>
+  </footer>
+
+  <!-- Google Analytics (optional) -->
+  <script async src="https://www.googletagmanager.com/gtag/js?id=GA_MEASUREMENT_ID"></script>
+  <script>
+    window.dataLayer = window.dataLayer || [];
+    function gtag(){dataLayer.push(arguments);}
+    gtag('js', new Date());
+    gtag('config', 'GA_MEASUREMENT_ID');
   </script>
 </body>
 </html>
