@@ -11,7 +11,7 @@
       padding: 2rem;
     }
     .container {
-      max-width: 800px;
+      max-width: 900px;
       margin: auto;
       background: white;
       padding: 2rem;
@@ -39,9 +39,23 @@
     button:hover {
       background: #0059c1;
     }
+    .button-secondary {
+      background: #6c757d;
+    }
+    .button-secondary:hover {
+      background: #5a6268;
+    }
+    .button-group {
+      display: flex;
+      gap: 0.5rem;
+      margin-top: 1rem;
+    }
+    .hidden {
+      display: none;
+    }
     #output {
       margin-top: 1.5rem;
-      max-height: 500px;
+      max-height: 600px;
       overflow-y: auto;
       border: 1px solid #eee;
       padding: 1rem;
@@ -59,13 +73,87 @@
       color: #333;
       margin-top: 0;
     }
+    h2 {
+      font-size: 1.2rem;
+      margin-top: 1.5rem;
+      color: #444;
+    }
+    .test-case {
+      background: #f8f9fa;
+      border: 1px solid #dee2e6;
+      border-radius: 6px;
+      padding: 1rem;
+      margin-bottom: 1rem;
+    }
+    .test-case h3 {
+      margin-top: 0;
+      color: #212529;
+    }
+    .test-case-description {
+      color: #6c757d;
+      font-style: italic;
+      margin-bottom: 1rem;
+    }
+    .test-case-priority {
+      display: inline-block;
+      padding: 0.2rem 0.5rem;
+      font-size: 0.8rem;
+      border-radius: 4px;
+      margin-left: 0.5rem;
+    }
+    .priority-high {
+      background: #f8d7da;
+      color: #721c24;
+    }
+    .priority-medium {
+      background: #fff3cd;
+      color: #856404;
+    }
+    .priority-low {
+      background: #d1e7dd;
+      color: #0f5132;
+    }
+    .test-steps {
+      margin-top: 1rem;
+    }
+    .test-step {
+      display: flex;
+      margin-bottom: 0.5rem;
+    }
+    .step-number {
+      flex: 0 0 40px;
+      font-weight: bold;
+    }
+    .step-action {
+      flex: 1;
+    }
+    .step-expected {
+      flex: 1;
+      color: #0d6efd;
+    }
+    .download-options {
+      margin-top: 1rem;
+      padding: 1rem;
+      background: #f8f9fa;
+      border-radius: 6px;
+    }
+    .format-badge {
+      display: inline-block;
+      padding: 0.25rem 0.5rem;
+      font-size: 0.75rem;
+      font-weight: bold;
+      border-radius: 4px;
+      margin-left: 0.5rem;
+      background: #e9ecef;
+      color: #495057;
+    }
   </style>
 </head>
 <body>
   <div class="container">
     <h1>🧪 Test Case Generator</h1>
     <form id="url-form">
-      <input type="text" id="url-input" placeholder="Enter website URL" required />
+      <input type="text" id="url-input" placeholder="Enter website URL (include http:// or https://)" required />
       <select id="format-select">
         <option value="plain">Plain Text</option>
         <option value="katalon">Katalon Format</option>
@@ -73,6 +161,19 @@
       </select>
       <button type="submit">Generate Test Cases</button>
     </form>
+    
+    <div id="download-container" class="hidden">
+      <div class="download-options">
+        <h3>Download Options</h3>
+        <div class="button-group">
+          <button id="download-txt" class="button-secondary">Download as TXT</button>
+          <button id="download-json" class="button-secondary">Download as JSON</button>
+          <button id="download-csv" class="button-secondary">Download as CSV</button>
+          <button id="download-html" class="button-secondary">Download as HTML</button>
+        </div>
+      </div>
+    </div>
+    
     <div id="output"></div>
   </div>
 
@@ -99,11 +200,19 @@
       }
     };
 
+    // Store the test data globally for download buttons to use
+    let testData = null;
+    
     document.getElementById('url-form').addEventListener('submit', async (e) => {
       e.preventDefault();
       const url = document.getElementById('url-input').value;
       const format = document.getElementById('format-select').value;
       const output = document.getElementById('output');
+      const downloadContainer = document.getElementById('download-container');
+      
+      // Clear previous test data
+      testData = null;
+      downloadContainer.classList.add('hidden');
       
       output.innerHTML = '⏳ Generating test cases...';
 
@@ -195,29 +304,78 @@
           try {
             const data = await response.json();
             logger.success('Response Data', data);
+            testData = data; // Store for download buttons
             
             if (data.success) {
+              let outputHtml = '';
+              
               if (data.note) {
                 logger.warn('Processing Note', data.note);
-                output.innerHTML = `<p>⚠️ Note: ${data.note}</p>`;
+                outputHtml += `<p>⚠️ Note: ${data.note}</p>`;
               }
               
-              if (Array.isArray(data.testCases)) {
-                logger.success('Test Cases Array', data.testCases);
-                output.innerHTML += data.testCases.map(tc => `<p>✅ ${tc}</p>`).join('');
+              // Check which format the test cases are in
+              if (typeof data.testCases === 'string') {
+                // For Katalon or Maestro format (text-based)
+                outputHtml += `<pre>${data.testCases}</pre>`;
+              } else if (Array.isArray(data.testCases) && typeof data.testCases[0] === 'string') {
+                // Old format - simple array of strings
+                outputHtml += data.testCases.map(tc => `<p>✅ ${tc}</p>`).join('');
+              } else if (Array.isArray(data.testCases) && typeof data.testCases[0] === 'object') {
+                // New detailed format - render nicely
+                outputHtml += `<h2>Generated Test Cases for ${url}</h2>`;
+                
+                data.testCases.forEach(testCase => {
+                  outputHtml += `
+                    <div class="test-case">
+                      <h3>${testCase.id}: ${testCase.title}
+                        <span class="test-case-priority priority-${testCase.priority.toLowerCase()}">${testCase.priority}</span>
+                      </h3>
+                      <div class="test-case-description">${testCase.description}</div>
+                      <div class="test-steps">
+                        <div class="test-step">
+                          <div class="step-number">#</div>
+                          <div class="step-action"><strong>Action</strong></div>
+                          <div class="step-expected"><strong>Expected Result</strong></div>
+                        </div>
+                        ${testCase.steps.map(step => `
+                          <div class="test-step">
+                            <div class="step-number">${step.step}</div>
+                            <div class="step-action">${step.action}</div>
+                            <div class="step-expected">${step.expected}</div>
+                          </div>
+                        `).join('')}
+                      </div>
+                    </div>
+                  `;
+                });
+                
+                // Show download options
+                downloadContainer.classList.remove('hidden');
               } else {
-                logger.success('Test Cases Text', data.testCases);
-                output.innerHTML += `<pre>${data.testCases}</pre>`;
+                // Unknown format, display JSON
+                outputHtml += `<pre>${JSON.stringify(data.testCases, null, 2)}</pre>`;
               }
+              
+              output.innerHTML = outputHtml;
             } else {
               logger.error('Processing Error', data.error);
               output.innerHTML = `<p>❌ Error: ${data.error}</p>`;
               
               // Still show test cases if they exist
               if (data.testCases) {
-                output.innerHTML += Array.isArray(data.testCases) 
-                  ? data.testCases.map(tc => `<p>✅ ${tc}</p>`).join('')
-                  : `<pre>${data.testCases}</pre>`;
+                if (Array.isArray(data.testCases)) {
+                  if (typeof data.testCases[0] === 'string') {
+                    output.innerHTML += data.testCases.map(tc => `<p>✅ ${tc}</p>`).join('');
+                  } else {
+                    // Detailed test case format
+                    output.innerHTML += renderDetailedTestCases(data.testCases, url);
+                    // Show download options
+                    downloadContainer.classList.remove('hidden');
+                  }
+                } else {
+                  output.innerHTML += `<pre>${data.testCases}</pre>`;
+                }
               }
             }
           } catch (error) {
@@ -245,6 +403,176 @@
       
       logger.groupEnd();
     });
+    
+    // Helper function to render detailed test cases
+    function renderDetailedTestCases(testCases, url) {
+      let html = `<h2>Generated Test Cases for ${url}</h2>`;
+      
+      testCases.forEach(testCase => {
+        html += `
+          <div class="test-case">
+            <h3>${testCase.id}: ${testCase.title}
+              <span class="test-case-priority priority-${testCase.priority.toLowerCase()}">${testCase.priority}</span>
+            </h3>
+            <div class="test-case-description">${testCase.description}</div>
+            <div class="test-steps">
+              <div class="test-step">
+                <div class="step-number">#</div>
+                <div class="step-action"><strong>Action</strong></div>
+                <div class="step-expected"><strong>Expected Result</strong></div>
+              </div>
+              ${testCase.steps.map(step => `
+                <div class="test-step">
+                  <div class="step-number">${step.step}</div>
+                  <div class="step-action">${step.action}</div>
+                  <div class="step-expected">${step.expected}</div>
+                </div>
+              `).join('')}
+            </div>
+          </div>
+        `;
+      });
+      
+      return html;
+    }
+    
+    // Download as TXT
+    document.getElementById('download-txt').addEventListener('click', () => {
+      if (!testData) return;
+      
+      let content = `TEST CASES FOR ${testData.pageData.url}\n`;
+      content += `Generated: ${new Date().toLocaleString()}\n\n`;
+      
+      testData.testCases.forEach(testCase => {
+        content += `${testCase.id}: ${testCase.title} (${testCase.priority})\n`;
+        content += `${testCase.description}\n\n`;
+        content += `Steps:\n`;
+        
+        testCase.steps.forEach(step => {
+          content += `${step.step}. ${step.action} => ${step.expected}\n`;
+        });
+        
+        content += `\n\n`;
+      });
+      
+      downloadFile(content, 'test-cases.txt', 'text/plain');
+    });
+    
+    // Download as JSON
+    document.getElementById('download-json').addEventListener('click', () => {
+      if (!testData) return;
+      
+      const content = JSON.stringify({
+        url: testData.pageData.url,
+        generated: new Date().toISOString(),
+        testCases: testData.testCases
+      }, null, 2);
+      
+      downloadFile(content, 'test-cases.json', 'application/json');
+    });
+    
+    // Download as CSV
+    document.getElementById('download-csv').addEventListener('click', () => {
+      if (!testData) return;
+      
+      let content = 'ID,Title,Priority,Description,Step Number,Action,Expected\n';
+      
+      testData.testCases.forEach(testCase => {
+        testCase.steps.forEach(step => {
+          // Escape any commas in the fields
+          const escapedTitle = `"${testCase.title.replace(/"/g, '""')}"`;
+          const escapedDescription = `"${testCase.description.replace(/"/g, '""')}"`;
+          const escapedAction = `"${step.action.replace(/"/g, '""')}"`;
+          const escapedExpected = `"${step.expected.replace(/"/g, '""')}"`;
+          
+          content += `${testCase.id},${escapedTitle},${testCase.priority},${escapedDescription},${step.step},${escapedAction},${escapedExpected}\n`;
+        });
+      });
+      
+      downloadFile(content, 'test-cases.csv', 'text/csv');
+    });
+    
+    // Download as HTML
+    document.getElementById('download-html').addEventListener('click', () => {
+      if (!testData) return;
+      
+      let content = `
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <meta charset="UTF-8">
+          <title>Test Cases for ${testData.pageData.url}</title>
+          <style>
+            body { font-family: Arial, sans-serif; margin: 20px; }
+            h1 { color: #333; }
+            .test-case { border: 1px solid #ddd; padding: 15px; margin-bottom: 20px; border-radius: 5px; }
+            .test-case h2 { margin-top: 0; color: #0070f3; }
+            .priority { display: inline-block; padding: 3px 8px; border-radius: 3px; font-size: 12px; margin-left: 10px; }
+            .priority-high { background: #ffebee; color: #c62828; }
+            .priority-medium { background: #fff8e1; color: #ff8f00; }
+            .priority-low { background: #e8f5e9; color: #2e7d32; }
+            .description { color: #666; font-style: italic; margin-bottom: 15px; }
+            table { width: 100%; border-collapse: collapse; }
+            th, td { padding: 8px; text-align: left; border-bottom: 1px solid #ddd; }
+            th { background-color: #f5f5f5; }
+          </style>
+        </head>
+        <body>
+          <h1>Test Cases for ${testData.pageData.url}</h1>
+          <p>Generated: ${new Date().toLocaleString()}</p>
+      `;
+      
+      testData.testCases.forEach(testCase => {
+        content += `
+          <div class="test-case">
+            <h2>${testCase.id}: ${testCase.title} <span class="priority priority-${testCase.priority.toLowerCase()}">${testCase.priority}</span></h2>
+            <div class="description">${testCase.description}</div>
+            <table>
+              <tr>
+                <th>#</th>
+                <th>Action</th>
+                <th>Expected Result</th>
+              </tr>
+        `;
+        
+        testCase.steps.forEach(step => {
+          content += `
+            <tr>
+              <td>${step.step}</td>
+              <td>${step.action}</td>
+              <td>${step.expected}</td>
+            </tr>
+          `;
+        });
+        
+        content += `
+            </table>
+          </div>
+        `;
+      });
+      
+      content += `
+        </body>
+        </html>
+      `;
+      
+      downloadFile(content, 'test-cases.html', 'text/html');
+    });
+    
+    // Helper function to download a file
+    function downloadFile(content, fileName, contentType) {
+      const blob = new Blob([content], { type: contentType });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = fileName;
+      document.body.appendChild(a);
+      a.click();
+      setTimeout(() => {
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+      }, 0);
+    }
   </script>
 </body>
 </html>
