@@ -1,0 +1,50 @@
+/**
+ * API endpoint for creating Stripe checkout sessions
+ */
+const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
+
+module.exports = async (req, res) => {
+  const { plan } = req.body;
+  
+  // Plan details
+  const plans = {
+    pro: {
+      priceId: process.env.STRIPE_PRO_PRICE_ID || 'price_123xyz', // Your Stripe price ID
+      name: 'Pro Plan'
+    }
+  };
+  
+  // Validate the plan
+  if (!plan || !plans[plan]) {
+    return res.status(400).json({ 
+      success: false,
+      error: 'Invalid plan selected'
+    });
+  }
+  
+  // Create checkout session
+  try {
+    const session = await stripe.checkout.sessions.create({
+      payment_method_types: ['card'],
+      line_items: [
+        {
+          price: plans[plan].priceId,
+          quantity: 1,
+        },
+      ],
+      mode: 'subscription',
+      success_url: `${req.headers.origin}/success?session_id={CHECKOUT_SESSION_ID}`,
+      cancel_url: `${req.headers.origin}/`,
+    });
+    
+    res.status(200).json({ 
+      success: true,
+      id: session.id 
+    });
+  } catch (error) {
+    res.status(500).json({ 
+      success: false,
+      error: error.message 
+    });
+  }
+};
