@@ -8,15 +8,15 @@
     "test": "echo \"No tests specified\" && exit 0"
   },
   "dependencies": {
-    "puppeteer-core": "10.1.0",
-    "chrome-aws-lambda": "10.1.0",
-    "@sparticuz/chromium-min": "113.0.1",
-    "puppeteer": "^21.0.0"
+    "puppeteer": "^21.0.0",
+    "puppeteer-core": "^21.0.0",
+    "@sparticuz/chromium-min": "^120.0.0",
+    "chrome-aws-lambda": "^10.1.0"
   },
   "devDependencies": {
     "vercel": "^29.1.1"
   },
   "engines": {
-    "node": "16.x"
+    "node": ">=16.x"
   }
 }
