@@ -58,8 +58,11 @@ async function generateTestCases(url, options = {}) {
     
     console.log('URL fetched successfully, parsing HTML...');
     
-    // Load HTML into cheerio
-    const $ = cheerio.load(response.data);
+  // Load HTML into cheerio with decodeEntities option to handle character encoding issues
+const $ = cheerio.load(response.data, {
+  decodeEntities: true,
+  normalizeWhitespace: false
+});
     
     // Extract basic page data
     const pageData = {
