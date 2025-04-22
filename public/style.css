@@ -619,6 +619,69 @@ footer p {
   margin: 0;
 }
 
+/* Collapsible Test Cases */
+.test-case {
+  border: 1px solid var(--border);
+  border-radius: var(--border-radius);
+  margin-bottom: 0.75rem;
+  background-color: rgba(30, 41, 59, 0.5);
+  transition: var(--transition);
+}
+
+.test-case-title-bar {
+  display: flex;
+  align-items: center;
+  cursor: pointer;
+  padding: 0.5rem;
+  flex-grow: 1;
+}
+
+.test-case-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.expand-icon {
+  margin-right: 0.5rem;
+  font-size: 0.8rem;
+  color: var(--teal);
+}
+
+.test-case.expanded {
+  border-color: var(--teal);
+}
+
+.test-case-content {
+  padding: 0 1rem 1rem 1rem;
+  border-top: 1px solid var(--border);
+}
+
+/* Progress Bar */
+.progress-info {
+  margin: 0.5rem 0;
+}
+
+.progress-text {
+  font-size: 0.85rem;
+  color: var(--text-light);
+  margin-bottom: 0.25rem;
+}
+
+.progress-bar {
+  height: 6px;
+  background-color: rgba(30, 41, 59, 0.5);
+  border-radius: 3px;
+  overflow: hidden;
+  width: 100%;
+}
+
+.progress-fill {
+  height: 100%;
+  background-color: var(--teal);
+  transition: width 0.3s ease;
+}
+
 /* Responsive */
 @media (max-width: 768px) {
   .url-form {
