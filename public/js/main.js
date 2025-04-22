@@ -705,22 +705,34 @@ document.addEventListener('DOMContentLoaded', function() {
     currentEditingTestCase.title = titleInput.value;
     currentEditingTestCase.description = descriptionInput.value;
     
-    // Update steps
-    if (currentEditingTestCase.steps && currentEditingTestCase.steps.length > 0) {
-      actionInputs.forEach(input => {
-        const index = parseInt(input.getAttribute('data-index'));
-        if (currentEditingTestCase.steps[index]) {
-          currentEditingTestCase.steps[index].action = input.value;
-        }
-      });
-      
-      expectedInputs.forEach(input => {
-        const index = parseInt(input.getAttribute('data-index'));
-        if (currentEditingTestCase.steps[index]) {
-          currentEditingTestCase.steps[index].expected = input.value;
-        }
-      });
+ // Update steps
+if (currentEditingTestCase.steps && currentEditingTestCase.steps.length > 0) {
+  actionInputs.forEach(input => {
+    const index = parseInt(input.getAttribute('data-index'));
+    if (currentEditingTestCase.steps[index]) {
+      currentEditingTestCase.steps[index].action = input.value;
     }
+  });
+  
+  expectedInputs.forEach(input => {
+    const index = parseInt(input.getAttribute('data-index'));
+    if (currentEditingTestCase.steps[index]) {
+      const expectedValue = input.value;
+      
+      // Special handling for title verification steps
+      if (currentEditingTestCase.steps[index].action.includes('Verify page title')) {
+        // Make sure the format is "Title is 'whatever'"
+        if (!expectedValue.startsWith('Title is "')) {
+          currentEditingTestCase.steps[index].expected = `Title is "${expectedValue.replace(/^Title is\s*"?/i, '').replace(/"$/g, '')}"`;
+        } else {
+          currentEditingTestCase.steps[index].expected = expectedValue;
+        }
+      } else {
+        currentEditingTestCase.steps[index].expected = expectedValue;
+      }
+    }
+  });
+}
     
     // Re-render test cases
     renderTestCases(state.testCases);
