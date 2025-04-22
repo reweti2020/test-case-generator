@@ -2,6 +2,23 @@
  * Main JavaScript file for Test Case Generator
  */
 document.addEventListener('DOMContentLoaded', function() {
+  // Add promotional banner
+  const promoHTML = `
+  <div id="promo-banner" class="promo-banner">
+    <div class="promo-content">
+      <span class="promo-tag">🎉 LIMITED TIME OFFER</span>
+      <p>All Pro features are currently available for free during our launch period!</p>
+    </div>
+    <button id="close-promo" class="close-promo" aria-label="Close promotion banner">×</button>
+  </div>
+  `;
+
+  // Insert promo banner at the top of the page
+  const container = document.querySelector('.container');
+  if (container) {
+    container.insertAdjacentHTML('beforebegin', promoHTML);
+  }
+  
   // Get DOM elements with null checks
   const elements = {
     urlForm: document.getElementById('url-form'),
@@ -21,7 +38,9 @@ document.addEventListener('DOMContentLoaded', function() {
     planOptions: document.querySelectorAll('.plan-option'),
     testCaseList: document.getElementById('test-case-list'),
     loadingSpinner: document.getElementById('loading-spinner'),
-    testCaseCounter: document.getElementById('test-case-counter')
+    testCaseCounter: document.getElementById('test-case-counter'),
+    promoBanner: document.getElementById('promo-banner'),
+    closePromo: document.getElementById('close-promo')
   };
   
   // Application state
@@ -35,8 +54,8 @@ document.addEventListener('DOMContentLoaded', function() {
     totalPages: 0,
     currentPage: 1,
     pageSize: 5,
-    userPlan: 'free', // Default to free plan
-    freeLimit: 10, // Maximum test cases for free plan
+    userPlan: 'pro', // Force pro plan for testing
+    freeLimit: 9999, // Very high limit for testing
     currentUrl: '',
     isLoading: false
   };
@@ -48,24 +67,29 @@ document.addEventListener('DOMContentLoaded', function() {
    * Initialize the application
    */
   function initApp() {
-    // Check if user is logged in with premium plan
-    checkUserPlan();
+    // Persist pro plan for testing
+    localStorage.setItem('userPlan', 'pro');
+    console.log('Pro plan enabled for testing');
     
     // Add event listeners
     addEventListeners();
     
     // Update UI based on user plan
     updateUiForUserPlan();
-  }
-  
-  /**
-   * Check user's current plan
-   */
-  function checkUserPlan() {
-    // Check localStorage for saved plan
-    const savedPlan = localStorage.getItem('userPlan');
-    if (savedPlan) {
-      state.userPlan = savedPlan;
+    
+    // Handle promo banner close
+    if (elements.closePromo) {
+      elements.closePromo.addEventListener('click', () => {
+        if (elements.promoBanner) {
+          elements.promoBanner.style.display = 'none';
+          localStorage.setItem('promoHidden', 'true');
+        }
+      });
+    }
+    
+    // Check if user has previously closed the banner
+    if (elements.promoBanner && localStorage.getItem('promoHidden') === 'true') {
+      elements.promoBanner.style.display = 'none';
     }
   }
   
@@ -129,26 +153,17 @@ document.addEventListener('DOMContentLoaded', function() {
     // Exit early if formatSelect doesn't exist
     if (!elements.formatSelect) return;
     
-    // Update format options
-    const katalon = elements.formatSelect.querySelector('option[value="katalon"]');
-    const maestro = elements.formatSelect.querySelector('option[value="maestro"]');
-    const html = elements.formatSelect.querySelector('option[value="html"]');
-    const csv = elements.formatSelect.querySelector('option[value="csv"]');
+    // For testing, enable all formats regardless of plan
+    const formatOptions = elements.formatSelect.querySelectorAll('option');
+    formatOptions.forEach(option => {
+      option.disabled = false;
+      // Remove any (Pro) labels
+      option.textContent = option.textContent.replace(' (Pro)', '');
+    });
     
-    if (state.userPlan === 'free') {
-      // Disable premium formats but keep them visible
-      if (katalon) katalon.enabled = true;
-      if (maestro) maestro.enabled = true;
-      if (html) html.enabled = true;
-      if (csv) csv.enabled = true;
-      
-      // Add premium labels
-      const premiumFormats = [katalon, maestro, html, csv].filter(el => el);
-      premiumFormats.forEach(format => {
-        if (format && !format.textContent.includes('(Pro)')) {
-          format.textContent += ' (Pro)';
-        }
-      });
+    // Hide upgrade banner if it exists
+    if (elements.upgradeBanner) {
+      elements.upgradeBanner.classList.add('hidden');
     }
   }
   
@@ -240,16 +255,16 @@ document.addEventListener('DOMContentLoaded', function() {
           elements.downloadContainer.style.display = 'block';
         }
         
-        // Show upgrade banner if free limit reached
+        // Show promotional message instead of upgrade banner
         if (data.upgradeRequired && elements.upgradeBanner) {
-          elements.upgradeBanner.classList.remove('hidden');
+          showPromotionalBanner();
         }
       } else {
         showError(`Error: ${data.error || 'Unknown error occurred'}`);
         
-        // Show upgrade prompt if needed
+        // Show promo message instead of upgrade banner
         if (data.upgradeRequired && elements.upgradeBanner) {
-          elements.upgradeBanner.classList.remove('hidden');
+          showPromotionalBanner();
         }
       }
     } catch (error) {
@@ -269,13 +284,7 @@ document.addEventListener('DOMContentLoaded', function() {
   async function handleGenerateNextTest() {
     if (!state.sessionId || !state.hasMoreElements || !elements.output) return;
     
-    // Check free plan limits
-    if (state.userPlan === 'free' && state.totalTestCases >= state.freeLimit) {
-      if (elements.upgradeBanner) {
-        elements.upgradeBanner.classList.remove('hidden');
-      }
-      return;
-    }
+    // All limits disabled for testing
     
     // Show loading state
     setLoading(true);
@@ -323,22 +332,16 @@ document.addEventListener('DOMContentLoaded', function() {
           elements.nextTestContainer.style.display = 'none';
         }
         
-        // Show upgrade banner if free limit reached
+        // Show promo message instead of upgrade banner
         if (data.upgradeRequired && elements.upgradeBanner) {
-          elements.upgradeBanner.classList.remove('hidden');
-          if (elements.nextTestContainer) {
-            elements.nextTestContainer.style.display = 'none';
-          }
+          showPromotionalBanner();
         }
       } else {
         showError(`Error: ${data.error || 'Unknown error occurred'}`);
         
-        // Show upgrade prompt if needed
+        // Show promo message instead of upgrade banner
         if (data.upgradeRequired && elements.upgradeBanner) {
-          elements.upgradeBanner.classList.remove('hidden');
-          if (elements.nextTestContainer) {
-            elements.nextTestContainer.style.display = 'none';
-          }
+          showPromotionalBanner();
         }
       }
     } catch (error) {
@@ -346,6 +349,31 @@ document.addEventListener('DOMContentLoaded', function() {
     } finally {
       setLoading(false);
     }
+  }
+
+  /**
+   * Show promotional banner instead of upgrade banner
+   */
+  function showPromotionalBanner() {
+    if (!elements.upgradeBanner) return;
+    
+    // Replace the upgrade banner with a promotional message
+    elements.upgradeBanner.classList.remove('upgrade-banner');
+    elements.upgradeBanner.classList.add('promo-banner');
+    
+    elements.upgradeBanner.innerHTML = `
+      <div class="promo-content">
+        <div class="promo-header">
+          <span class="promo-icon">🎁</span>
+          <h3>Premium Features Unlocked!</h3>
+        </div>
+        <p>You're enjoying all premium features for free during our launch period. No time limit on your test cases!</p>
+        <p class="promo-small">Premium features include unlimited test cases, all export formats, and enhanced detection.</p>
+      </div>
+    `;
+    
+    // Show the banner
+    elements.upgradeBanner.classList.remove('hidden');
   }
   
   /**
@@ -539,11 +567,6 @@ document.addEventListener('DOMContentLoaded', function() {
     // Update test case counter
     if (elements.testCaseCounter) {
       elements.testCaseCounter.textContent = `Showing ${state.testCases.length} test case${state.testCases.length !== 1 ? 's' : ''}`;
-      
-      // Add limit info for free users
-      if (state.userPlan === 'free') {
-        elements.testCaseCounter.textContent += ` (${state.testCases.length}/${state.freeLimit})`;
-      }
     }
   }
   
@@ -595,15 +618,7 @@ document.addEventListener('DOMContentLoaded', function() {
       return;
     }
     
-    // Premium format check
-    const premiumFormats = ['katalon', 'maestro', 'testrail', 'csv', 'html'];
-    if (state.userPlan === 'free' && premiumFormats.includes(format)) {
-      if (elements.upgradeBanner) {
-        elements.upgradeBanner.classList.remove('hidden');
-      }
-      showError(`${format.toUpperCase()} export is a Pro feature`);
-      return;
-    }
+    // Premium format restriction disabled for testing
     
     // Track download event
     trackEvent('download_test_cases', 'usage', format);
@@ -632,9 +647,9 @@ document.addEventListener('DOMContentLoaded', function() {
       } else {
         showError(`Export error: ${data.error || 'Unknown error'}`);
         
-        // Show upgrade banner if needed
+        // Show promo message instead of upgrade banner
         if (data.upgradeRequired && elements.upgradeBanner) {
-          elements.upgradeBanner.classList.remove('hidden');
+          showPromotionalBanner();
         }
       }
     } catch (error) {
@@ -722,3 +737,78 @@ document.addEventListener('DOMContentLoaded', function() {
     console.log(`Analytics: ${event}, ${category}, ${label}`);
   }
 });
+
+// Add these CSS styles to your existing CSS
+const promoBannerStyles = `
+.promo-banner {
+  background-color: rgba(32, 197, 198, 0.15);
+  border-bottom: 1px solid var(--teal);
+  color: var(--text);
+  padding: 0.75rem 1rem;
+  text-align: center;
+  position: relative;
+  animation: fadeIn 0.5s ease-in-out;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+.promo-content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.promo-tag {
+  background-color: var(--teal);
+  color: white;
+  padding: 0.25rem 0.75rem;
+  border-radius: 20px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  display: inline-block;
+  margin-bottom: 0.25rem;
+}
+
+.promo-banner p {
+  margin: 0;
+  font-size: 0.9rem;
+}
+
+.close-promo {
+  background: none;
+  border: none;
+  color: var(--text-light);
+  font-size: 1.5rem;
+  cursor: pointer;
+  position: absolute;
+  right: 1rem;
+  top: 50%;
+  transform: translateY(-50%);
+}
+
+.close-promo:hover {
+  color: var(--text);
+}
+
+.promo-header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.promo-icon {
+  font-size: 1.5rem;
+}
+
+.promo-small {
+  font-size: 0.85rem;
+  color: var(--text-light);
+}
+`;
+
+// Add styles to the document
+const styleElement = document.createElement('style');
+styleElement.textContent = promoBannerStyles;
+document.head.appendChild(styleElement);
