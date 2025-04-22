@@ -24,7 +24,7 @@ module.exports = async (req, res) => {
     const { url, mode, pageData, processed, elementType, elementIndex, format } = req.body || {};
     
     // Log request for debugging
-    console.log(`Request params: mode=${mode}, elementType=${elementType}, elementIndex=${elementIndex}`);
+    console.log(`Request params: mode=${mode}, elementType=${elementType}, elementIndex=${elementIndex}, batchSize=${batchSize}`);
     
     // Check if all required fields are present
     if (mode === 'first' && !url) {
@@ -50,7 +50,7 @@ module.exports = async (req, res) => {
     if (mode === 'first') {
       result = await generateFirstTest(url, userPlan);
     } else {
-      result = generateNextTest(pageData, processed, elementType, elementIndex, userPlan);
+      result = generateNextTest(pageData, processed, elementType, elementIndex, userPlan, batchSize);
     }
     
     return res.status(200).json(result);
@@ -269,104 +269,67 @@ async function generateFirstTest(url, userPlan = 'pro') {
 /**
  * Generate the next test case using client-provided data
  */
-function generateNextTest(pageData, processed, elementType, elementIndex, userPlan = 'pro') {
-  if (!pageData || !processed) {
-    return {
-      success: false,
-      error: 'Missing page data or processing state'
-    };
-  }
-  
-  console.log(`Generating test for ${elementType} #${elementIndex}`);
-  console.log(`Processing state:`, processed);
-  
-  // Get element collection based on type
-  const elements = pageData[`${elementType}s`] || [];
-  
-  if (elementIndex >= elements.length) {
-    return {
-      success: false,
-      error: 'Element index out of bounds'
-    };
-  }
-  
-  // Get the specific element
-  const element = elements[elementIndex];
-  
-  // Generate a test case based on element type
-  let testCase;
-  
-  switch (elementType) {
-    case 'button':
-      testCase = generateButtonTest(pageData, element, processed.buttons);
-      break;
-    case 'form':
-      testCase = generateFormTest(pageData, element, processed.forms);
-      break;
-    case 'link':
-      testCase = generateLinkTest(pageData, element, processed.links);
-      break;
-    case 'input':
-      testCase = generateInputTest(pageData, element, processed.inputs);
-      break;
-    default:
-      testCase = null;
-  }
-  
-  if (!testCase) {
-    return {
-      success: false,
-      error: 'Failed to generate test case'
-    };
-  }
-  
-  // Update processed count
-  processed[`${elementType}s`]++;
-  
-  // Find next element type to process
-  let nextElementType = null;
-  let nextElementIndex = 0;
-  
-  // First try the current element type
-  if (processed[`${elementType}s`] < pageData[`${elementType}s`].length) {
-    nextElementType = elementType;
-    nextElementIndex = processed[`${elementType}s`];
-  } else {
-    // Try other element types
-    const types = ['button', 'form', 'input', 'link'];
-    for (const type of types) {
-      if (processed[`${type}s`] < pageData[`${type}s`].length) {
-        nextElementType = type;
-        nextElementIndex = processed[`${type}s`];
-        break;
-      }
-    }
-  }
-  
-  // Always allow more elements for testing
-  const hasMoreElements = nextElementType !== null;
-  
-  // Calculate total test cases
-  const totalTestCases = 1 + // Page test
-                        processed.buttons +
-                        processed.forms +
-                        processed.links +
-                        processed.inputs;
-  
-  console.log(`Test generated successfully. Next: ${nextElementType} #${nextElementIndex}`);
-  
-  // Return updated state to client
-  return {
-    success: true,
-    pageData: pageData,        // Send back complete page data
-    processed: processed,      // Send updated processing state
-    testCases: [testCase],
-    nextElementType,
-    nextElementIndex,
-    hasMoreElements,
-    totalTestCases: totalTestCases,
-    upgradeRequired: false
-  };
+f/* Collapsible Test Cases */
+.test-case {
+  border: 1px solid var(--border);
+  border-radius: var(--border-radius);
+  margin-bottom: 0.75rem;
+  background-color: rgba(30, 41, 59, 0.5);
+  transition: var(--transition);
+}
+
+.test-case-title-bar {
+  display: flex;
+  align-items: center;
+  cursor: pointer;
+  padding: 0.5rem;
+  flex-grow: 1;
+}
+
+.test-case-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.expand-icon {
+  margin-right: 0.5rem;
+  font-size: 0.8rem;
+  color: var(--teal);
+}
+
+.test-case.expanded {
+  border-color: var(--teal);
+}
+
+.test-case-content {
+  padding: 0 1rem 1rem 1rem;
+  border-top: 1px solid var(--border);
+}
+
+/* Progress Bar */
+.progress-info {
+  margin: 0.5rem 0;
+}
+
+.progress-text {
+  font-size: 0.85rem;
+  color: var(--text-light);
+  margin-bottom: 0.25rem;
+}
+
+.progress-bar {
+  height: 6px;
+  background-color: rgba(30, 41, 59, 0.5);
+  border-radius: 3px;
+  overflow: hidden;
+  width: 100%;
+}
+
+.progress-fill {
+  height: 100%;
+  background-color: var(--teal);
+  transition: width 0.3s ease;
 }
 
 /**
