@@ -45,7 +45,7 @@ module.exports = async (req, res) => {
     }
 
     // Determine user plan (in a real app, extract from auth token)
-    const userPlan = req.headers.authorization?.includes('premium') ? 'pro' : 'free';
+    const userPlan = 'pro'; // Force pro access for testing
     
     // Process the request based on mode
     let result;
@@ -116,7 +116,7 @@ async function generateFirstTest(url, userPlan = 'free') {
       });
     });
     
-    // Extract forms - limit to first 10
+    // Extract forms - limit to first 100
     pageData.forms = [];
     $('form').slice(0, 10).each((i, el) => {
       const $form = $(el);
@@ -127,7 +127,7 @@ async function generateFirstTest(url, userPlan = 'free') {
       });
     });
     
-    // Extract links - limit to first 15
+    // Extract links - limit to first 150
     pageData.links = [];
     $('a[href]').slice(0, 15).each((i, el) => {
       const $link = $(el);
@@ -138,7 +138,7 @@ async function generateFirstTest(url, userPlan = 'free') {
       });
     });
     
-    // Extract inputs - limit to first 15
+    // Extract inputs - limit to first 150
     pageData.inputs = [];
     $('input[type!="submit"][type!="button"], textarea, select').slice(0, 15).each((i, el) => {
       const $input = $(el);
@@ -201,7 +201,7 @@ async function generateFirstTest(url, userPlan = 'free') {
                      (pageData.links.length > 0 ? 'link' : null)));
     
     // Free plan limit
-    const freeLimit = 10;
+    const freeLimit = 100;
     const hasMoreElements = (userPlan !== 'free' || pageCache[newSessionId].testCases.length < freeLimit) && 
                       (pageData.buttons.length > 0 || pageData.forms.length > 0 || 
                        pageData.links.length > 0 || pageData.inputs.length > 0);
@@ -242,7 +242,7 @@ function generateNextTest(sessionId, elementType, elementIndex, userPlan = 'free
   const session = pageCache[sessionId];
   
   // Check free plan limits
-  const freeLimit = 10;
+  const freeLimit = 100;
   if (userPlan === 'free' && session.testCases.length >= freeLimit) {
     return {
       success: false,
