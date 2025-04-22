@@ -1,27 +1,62 @@
-const cheerio = require('cheerio');
+// testGen.js - Optimized for Vercel serverless environment
 const axios = require('axios');
+const cheerio = require('cheerio');
 
-// In-memory storage for page analysis results
+// In-memory storage for page analysis results (consider moving to a database for production)
+// Note: This will be reset when the serverless function goes cold
 const pageCache = {};
 
-// Main function for test generation
+/**
+ * Main function for test generation
+ * @param {string} url - Website URL to analyze
+ * @param {object} options - Generation options
+ * @returns {object} - Generated test cases and session info
+ */
 async function generateTestCases(url, options = {}) {
-  const { mode = 'first', sessionId = null, elementType = 'button', elementIndex = 0, userPlan = 'free' } = options;
+  const { 
+    mode = 'first', 
+    sessionId = null, 
+    elementType = 'button', 
+    elementIndex = 0, 
+    userPlan = 'free' 
+  } = options;
   
   // For subsequent calls, use cached page data if available
   if (mode === 'next' && sessionId && pageCache[sessionId]) {
-    return generateNextTest(sessionId, elementType, elementIndex, userPlan);
+    try {
+      return generateNextTest(sessionId, elementType, elementIndex, userPlan);
+    } catch (error) {
+      console.error('Error generating next test:', error);
+      return { 
+        success: false, 
+        error: `Error generating next test: ${error.message}`
+      };
+    }
   }
   
   // For first call, analyze the page
   try {
+    console.log(`Fetching URL: ${url}`);
+    
     // Fetch the HTML content with a timeout
     const response = await axios.get(url, {
-      timeout: 10000, // 10 second timeout
+      timeout: 8000, // Reduced timeout for serverless environment
       headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+        'Accept': 'text/html,application/xhtml+xml,application/xml',
+        'Accept-Language': 'en-US,en;q=0.9'
       }
     });
+    
+    // Check response status
+    if (response.status !== 200) {
+      return {
+        success: false,
+        error: `Failed to fetch URL (Status ${response.status})`
+      };
+    }
+    
+    console.log('URL fetched successfully, parsing HTML...');
     
     // Load HTML into cheerio
     const $ = cheerio.load(response.data);
@@ -33,9 +68,10 @@ async function generateTestCases(url, options = {}) {
       extractedAt: new Date().toISOString()
     };
 
-    // Extract buttons
+    // Extract elements more efficiently
+    // Extract buttons - limit to first 20 for performance
     pageData.buttons = [];
-    $('button, input[type="submit"], input[type="button"], .btn, [role="button"]').each((i, el) => {
+    $('button, input[type="submit"], input[type="button"], .btn, [role="button"]').slice(0, 20).each((i, el) => {
       const $el = $(el);
       pageData.buttons.push({
         text: $el.text().trim() || $el.val() || 'Unnamed Button',
@@ -46,9 +82,9 @@ async function generateTestCases(url, options = {}) {
       });
     });
 
-    // Extract forms
+    // Extract forms - limit to first 10
     pageData.forms = [];
-    $('form').each((i, el) => {
+    $('form').slice(0, 10).each((i, el) => {
       const $form = $(el);
       pageData.forms.push({
         id: $form.attr('id') || '',
@@ -57,9 +93,9 @@ async function generateTestCases(url, options = {}) {
       });
     });
 
-    // Extract links
+    // Extract links - limit to first 15
     pageData.links = [];
-    $('a[href]').each((i, el) => {
+    $('a[href]').slice(0, 15).each((i, el) => {
       const $link = $(el);
       pageData.links.push({
         text: $link.text().trim() || 'Unnamed Link',
@@ -68,9 +104,9 @@ async function generateTestCases(url, options = {}) {
       });
     });
 
-    // Extract inputs
+    // Extract inputs - limit to first 15
     pageData.inputs = [];
-    $('input[type!="submit"][type!="button"], textarea, select').each((i, el) => {
+    $('input[type!="submit"][type!="button"], textarea, select').slice(0, 15).each((i, el) => {
       const $input = $(el);
       pageData.inputs.push({
         type: $input.attr('type') || 'text',
@@ -79,6 +115,8 @@ async function generateTestCases(url, options = {}) {
         placeholder: $input.attr('placeholder') || ''
       });
     });
+
+    console.log('HTML parsed successfully, creating session...');
 
     // Generate a session ID and store page data
     const newSessionId = Math.random().toString(36).substring(2, 15);
@@ -134,6 +172,8 @@ async function generateTestCases(url, options = {}) {
                       (pageData.buttons.length > 0 || pageData.forms.length > 0 || 
                        pageData.links.length > 0 || pageData.inputs.length > 0);
     
+    console.log('First test case generated successfully');
+    
     // Return first test with session info
     return { 
       success: true, 
@@ -150,21 +190,28 @@ async function generateTestCases(url, options = {}) {
     console.error('Error in test generation:', error);
     return { 
       success: false, 
-      error: `Test generation error: ${error.message}`
+      error: `Test generation error: ${error.message || 'Unknown error'}`
     };
   }
 }
 
-// Function to generate the next test from cached page data
+/**
+ * Function to generate the next test from cached page data
+ * @param {string} sessionId - Session ID
+ * @param {string} elementType - Type of element to test
+ * @param {number} elementIndex - Index of element to test
+ * @param {string} userPlan - User's subscription plan
+ * @returns {object} - Generated test case and session info
+ */
 function generateNextTest(sessionId, elementType, elementIndex, userPlan = 'free') {
-  const session = pageCache[sessionId];
-  
-  if (!session) {
+  if (!sessionId || !pageCache[sessionId]) {
     return {
       success: false,
       error: 'Invalid or expired session ID'
     };
   }
+  
+  const session = pageCache[sessionId];
   
   // Check free plan limits
   const freeLimit = 10;
@@ -195,16 +242,16 @@ function generateNextTest(sessionId, elementType, elementIndex, userPlan = 'free
   
   switch (elementType) {
     case 'button':
-      testCase = generateButtonTest(session.pageData, element, session.processed.buttons++);
+      testCase = generateButtonTest(session.pageData, element, session.processed.buttons);
       break;
     case 'form':
-      testCase = generateFormTest(session.pageData, element, session.processed.forms++);
+      testCase = generateFormTest(session.pageData, element, session.processed.forms);
       break;
     case 'link':
-      testCase = generateLinkTest(session.pageData, element, session.processed.links++);
+      testCase = generateLinkTest(session.pageData, element, session.processed.links);
       break;
     case 'input':
-      testCase = generateInputTest(session.pageData, element, session.processed.input++);
+      testCase = generateInputTest(session.pageData, element, session.processed.inputs);
       break;
     default:
       testCase = null;
@@ -272,7 +319,7 @@ function generateButtonTest(pageData, button, index) {
       },
       {
         step: 2,
-        action: `Find button ${button.text ? `with text "${button.text}"` : button.id ? `with ID "${button.id}"` : ''}`,
+        action: `Find button ${button.text ? `with text "${button.text}"` : button.id ? `with ID "${button.id}"` : index + 1}`,
         expected: 'Button is visible on the page'
       },
       {
@@ -329,7 +376,7 @@ function generateLinkTest(pageData, link, index) {
       },
       {
         step: 2,
-        action: `Find link ${link.text ? `with text "${link.text}"` : link.id ? `with ID "${link.id}"` : ''}`,
+        action: `Find link ${link.text ? `with text "${link.text}"` : link.id ? `with ID "${link.id}"` : index + 1}`,
         expected: 'Link is visible on the page'
       },
       {
@@ -355,7 +402,7 @@ function generateInputTest(pageData, input, index) {
       },
       {
         step: 2,
-        action: `Find input field ${input.id ? `with ID "${input.id}"` : input.name ? `with name "${input.name}"` : ''}`,
+        action: `Find input field ${input.id ? `with ID "${input.id}"` : input.name ? `with name "${input.name}"` : index + 1}`,
         expected: 'Input field is visible on the page'
       },
       {
