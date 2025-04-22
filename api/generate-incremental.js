@@ -1,5 +1,7 @@
-// /api/generate-incremental.js - Serverless API for test case generation
-const { generateTestCases } = require('../testGen');
+/**
+ * API endpoint for incremental test case generation
+ */
+const { generateTestCases } = require('../src/utils/testGen');
 
 // Helper function to verify user subscription
 async function verifySubscription(userId) {
@@ -20,32 +22,18 @@ async function verifySubscription(userId) {
   }
 }
 
-// Main handler function for the API endpoint
 module.exports = async (req, res) => {
-  // Support both GET and POST methods
-  const method = req.method.toUpperCase();
-  
-  // Log request to debug
-  console.log(`[API] ${method} request to generate-incremental`);
-  
-  // Only allow POST requests
-  if (method !== 'POST') {
-    return res.status(405).json({
-      success: false,
-      error: 'Method not allowed. Please use POST.'
-    });
-  }
-  
-  // Get request body
-  const body = req.body || {};
-  const { url, mode, sessionId, elementType, elementIndex, format } = body;
-  
-  // Get user information from request
-  const userId = req.headers.authorization?.split(' ')[1];
+  // Log the start of the function to help with debugging
+  console.log('[API] Processing generate-incremental request');
   
   try {
-    // Log operation
-    console.log(`Processing ${mode === 'first' ? 'initial' : 'subsequent'} test generation for ${url || sessionId}`);
+    const { url, mode, sessionId, elementType, elementIndex, format } = req.body || {};
+    
+    // Log the request parameters
+    console.log(`Request params: ${JSON.stringify({ url, mode, sessionId, elementType, elementIndex, format })}`);
+    
+    // Get user information from request
+    const userId = req.headers.authorization?.split(' ')[1];
     
     // Check if user has premium subscription
     const isPremium = await verifySubscription(userId);
@@ -60,7 +48,7 @@ module.exports = async (req, res) => {
       userPlan
     };
     
-    // Validate required parameters
+    // For first request, URL is required
     if (options.mode === 'first' && !url) {
       return res.status(400).json({
         success: false,
@@ -68,6 +56,7 @@ module.exports = async (req, res) => {
       });
     }
     
+    // For subsequent requests, sessionId is required
     if (options.mode === 'next' && !sessionId) {
       return res.status(400).json({
         success: false,
@@ -76,9 +65,11 @@ module.exports = async (req, res) => {
     }
     
     // Generate test cases
+    console.log('Calling generateTestCases function');
     const result = await generateTestCases(url, options);
+    console.log('Generate test cases result:', result.success ? 'Success' : 'Failed');
     
-    // Check for premium format request by non-premium user
+    // Check if premium format was requested by non-premium user
     if (format && ['katalon', 'maestro', 'testrail'].includes(format) && !isPremium) {
       return res.status(200).json({
         success: false,
@@ -100,9 +91,6 @@ module.exports = async (req, res) => {
       //   });
       // }
     }
-    
-    // Log result status
-    console.log(`Test generation ${result.success ? 'succeeded' : 'failed'}: ${result.error || 'No error'}`);
     
     // Return the result
     return res.status(200).json(result);
