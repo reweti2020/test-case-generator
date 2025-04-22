@@ -131,7 +131,23 @@
       <p>Get professional QA consultation from our expert team.</p>
       <a href="https://velocityqa.com.au/contact" target="_blank" class="button-secondary">Learn More</a>
     </section>
+
+<!-- Debug Tools (hidden by default) - ADD RIGHT HERE -->
+    <section id="debug-section" class="debug-section" style="display: none;">
+      <h3>Debug Tools</h3>
+      <p>Use these tools to help diagnose issues with test case generation.</p>
+      
+      <div class="form-group">
+        <label for="debug-selector">CSS Selector:</label>
+        <input type="text" id="debug-selector" placeholder="title, button, .btn" class="debug-input">
+      </div>
+      
+      <button id="run-debug" class="button-secondary">Debug Elements</button>
+      
+      <div id="debug-results" class="debug-results"></div>
+    </section>
   </main>
+
 
   <!-- Upgrade Modal (hidden by default) -->
   <div id="upgrade-modal" class="modal" style="display: none;">
