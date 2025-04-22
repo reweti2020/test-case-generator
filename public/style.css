@@ -711,6 +711,49 @@ textarea.edit-input {
 .edit-button:hover {
   background-color: rgba(32, 197, 198, 0.1);
 }
+/* Debug Tools */
+.debug-section {
+  background: var(--card);
+  padding: 1.5rem;
+  border-radius: var(--border-radius);
+  border: 1px solid var(--border);
+  margin-top: 2rem;
+}
+
+.debug-input {
+  width: 100%;
+  background-color: var(--bg-dark);
+  border: 1px solid var(--border);
+  border-radius: var(--border-radius);
+  padding: 0.5rem;
+  color: var(--text);
+  margin-bottom: 1rem;
+}
+
+.debug-results {
+  margin-top: 1rem;
+  background-color: rgba(30, 41, 59, 0.5);
+  border-radius: var(--border-radius);
+  padding: 1rem;
+  max-height: 300px;
+  overflow-y: auto;
+  font-family: monospace;
+  white-space: pre-wrap;
+}
+
+.debug-toggle {
+  font-size: 0.8rem;
+  color: var(--text-light);
+  background: none;
+  border: none;
+  cursor: pointer;
+  text-decoration: underline;
+  margin-top: 1rem;
+  transition: color 0.2s;
+}
+
+.debug-toggle:hover {
+  color: var(--teal);
 }
 
 /* Success Banner */
