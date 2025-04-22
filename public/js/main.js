@@ -297,8 +297,8 @@ document.addEventListener('DOMContentLoaded', function() {
  * Handle "Generate Next Test" button click
  */
 async function handleGenerateNextTest() {
-  if (!state.hasMoreElements || !state.sessionId) {
-    showError('No more elements to test');
+  if (!state.hasMoreElements || !state.pageData || !state.processed) {
+    showError('Missing page data or no more elements to test');
     return;
   }
   
@@ -313,8 +313,9 @@ async function handleGenerateNextTest() {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        sessionId: state.sessionId,
         mode: 'next',
+        pageData: state.pageData,
+        processed: state.processed,
         elementType: state.nextElementType,
         elementIndex: state.nextElementIndex,
         format: format,
