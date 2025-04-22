@@ -46,7 +46,8 @@ document.addEventListener('DOMContentLoaded', function() {
   
   // Application state
   const state = {
-    sessionId: null,
+    pageData: null,           // Store all page data from server
+    processed: null,          // Store processing state
     nextElementType: null,
     nextElementIndex: 0,
     hasMoreElements: false,
@@ -55,8 +56,8 @@ document.addEventListener('DOMContentLoaded', function() {
     totalPages: 0,
     currentPage: 1,
     pageSize: 5,
-    userPlan: 'pro', // Force pro plan for testing
-    freeLimit: 9999, // Very high limit for testing
+    userPlan: 'pro',          // Force pro plan for testing
+    freeLimit: 9999,          // Very high limit for testing
     currentUrl: '',
     isLoading: false
   };
@@ -181,7 +182,8 @@ document.addEventListener('DOMContentLoaded', function() {
     if (!elements.urlInput || !elements.output) return;
     
     // Reset session state
-    state.sessionId = null;
+    state.pageData = null;
+    state.processed = null;
     state.testCases = [];
     state.totalTestCases = 0;
     
@@ -230,8 +232,9 @@ document.addEventListener('DOMContentLoaded', function() {
       const data = await response.json();
       
       if (data.success) {
-        // Store session info
-        state.sessionId = data.sessionId;
+        // Store complete data returned from server
+        state.pageData = data.pageData;
+        state.processed = data.processed;
         state.nextElementType = data.nextElementType;
         state.nextElementIndex = data.nextElementIndex;
         state.hasMoreElements = data.hasMoreElements;
@@ -289,9 +292,10 @@ document.addEventListener('DOMContentLoaded', function() {
    * Handle "Generate Next Test" button click
    */
   async function handleGenerateNextTest() {
-    if (!state.sessionId || !state.hasMoreElements || !elements.output) return;
-    
-    // All limits disabled for testing
+    if (!state.hasMoreElements || !state.pageData || !state.processed) {
+      showError('Missing page data or no more elements to test');
+      return;
+    }
     
     // Show loading state
     setLoading(true);
@@ -305,7 +309,8 @@ document.addEventListener('DOMContentLoaded', function() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           mode: 'next',
-          sessionId: state.sessionId,
+          pageData: state.pageData,
+          processed: state.processed,
           elementType: state.nextElementType,
           elementIndex: state.nextElementIndex,
           format: format
@@ -319,7 +324,9 @@ document.addEventListener('DOMContentLoaded', function() {
       const data = await response.json();
       
       if (data.success) {
-        // Update state
+        // Update state with received data
+        state.pageData = data.pageData;
+        state.processed = data.processed;
         state.nextElementType = data.nextElementType;
         state.nextElementIndex = data.nextElementIndex;
         state.hasMoreElements = data.hasMoreElements;
@@ -761,7 +768,7 @@ document.addEventListener('DOMContentLoaded', function() {
    * Save corrections to localStorage for future use
    */
   function saveCorrectionsToStorage() {
-    if (!state.sessionId || !currentEditingTestCase) return;
+    if (!currentEditingTestCase) return;
     
     // Get existing corrections
     let corrections = JSON.parse(localStorage.getItem('testCaseCorrections') || '{}');
@@ -896,12 +903,10 @@ document.addEventListener('DOMContentLoaded', function() {
    * @param {String} format - Export format
    */
   async function handleDownload(format) {
-    if (!state.sessionId || !state.testCases || state.testCases.length === 0) {
+    if (!state.testCases || state.testCases.length === 0) {
       showError('No test cases to download');
       return;
     }
-    
-    // Premium format restriction disabled for testing
     
     // Track download event
     trackEvent('download_test_cases', 'usage', format);
@@ -913,7 +918,8 @@ document.addEventListener('DOMContentLoaded', function() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          sessionId: state.sessionId,
+          pageData: state.pageData,
+          testCases: state.testCases,
           format: format
         })
       });
@@ -1020,103 +1026,3 @@ document.addEventListener('DOMContentLoaded', function() {
     console.log(`Analytics: ${event}, ${category}, ${label}`);
   }
 });
-
-// Add these CSS styles to your existing CSS
-const promoBannerStyles = `
-.promo-banner {
-  background-color: rgba(32, 197, 198, 0.15);
-  border-bottom: 1px solid var(--teal);
-  color: var(--text);
-  padding: 0.75rem 1rem;
-  text-align: center;
-  position: relative;
-  animation: fadeIn 0.5s ease-in-out;
-  display: flex;
-  justify-content: center;
-  align-items: center;
-}
-
-.promo-content {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 0.25rem;
-}
-
-.promo-tag {
-  background-color: var(--teal);
-  color: white;
-  padding: 0.25rem 0.75rem;
-  border-radius: 20px;
-  font-size: 0.8rem;
-  font-weight: 600;
-  display: inline-block;
-  margin-bottom: 0.25rem;
-}
-
-.promo-banner p {
-  margin: 0;
-  font-size: 0.9rem;
-}
-
-.close-promo {
-  background: none;
-  border: none;
-  color: var(--text-light);
-  font-size: 1.5rem;
-  cursor: pointer;
-  position: absolute;
-  right: 1rem;
-  top: 50%;
-  transform: translateY(-50%);
-}
-
-.close-promo:hover {
-  color: var(--text);
-}
-
-.promo-header {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-}
-
-.promo-icon {
-  font-size: 1.5rem;
-}
-
-.promo-small {
-  font-size: 0.85rem;
-  color: var(--text-light);
-}
-
-/* Edit button styling */
-.test-case-actions {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-}
-
-.edit-button {
-  background-color: #1e293b; /* Darker background */
-  border: 1px solid var(--teal);
-  color: var(--teal);
-  padding: 0.3rem 0.7rem;
-  border-radius: var(--border-radius);
-  font-size: 0.8rem;
-  font-weight: 500;
-  cursor: pointer;
-  transition: var(--transition);
-  margin-right: 0.75rem;
-}
-
-.edit-button:hover {
-  background-color: var(--teal);
-  color: white;
-}
-`;
-
-// Add styles to the document
-const styleElement = document.createElement('style');
-styleElement.textContent = promoBannerStyles;
-document.head.appendChild(styleElement);
