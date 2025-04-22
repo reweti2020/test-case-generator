@@ -2,7 +2,7 @@
  * Main JavaScript file for Test Case Generator
  */
 document.addEventListener('DOMContentLoaded', function() {
-  // Get DOM elements
+  // Get DOM elements with null checks
   const elements = {
     urlForm: document.getElementById('url-form'),
     urlInput: document.getElementById('url-input'),
@@ -67,11 +67,6 @@ document.addEventListener('DOMContentLoaded', function() {
     if (savedPlan) {
       state.userPlan = savedPlan;
     }
-    
-    // This would typically check local storage or session for user status
-    // For demo purposes, you can uncomment one of these to test different plans
-    // state.userPlan = 'pro';
-    // state.userPlan = 'enterprise';
   }
   
   /**
@@ -93,14 +88,18 @@ document.addEventListener('DOMContentLoaded', function() {
       elements.showUpgradeModal.addEventListener('click', () => {
         // Track upgrade click
         trackEvent('upgrade_click', 'engagement', 'upgrade_banner');
-        elements.upgradeModal.style.display = 'flex';
+        if (elements.upgradeModal) {
+          elements.upgradeModal.style.display = 'flex';
+        }
       });
     }
     
     // Close upgrade modal
     if (elements.closeUpgradeModal) {
       elements.closeUpgradeModal.addEventListener('click', () => {
-        elements.upgradeModal.style.display = 'none';
+        if (elements.upgradeModal) {
+          elements.upgradeModal.style.display = 'none';
+        }
       });
     }
     
@@ -110,7 +109,7 @@ document.addEventListener('DOMContentLoaded', function() {
     }
     
     // Plan selection
-    if (elements.planOptions) {
+    if (elements.planOptions && elements.planOptions.length > 0) {
       elements.planOptions.forEach(plan => {
         plan.addEventListener('click', () => {
           elements.planOptions.forEach(p => p.classList.remove('selected'));
@@ -127,11 +126,14 @@ document.addEventListener('DOMContentLoaded', function() {
    * Update UI elements based on user plan
    */
   function updateUiForUserPlan() {
+    // Exit early if formatSelect doesn't exist
+    if (!elements.formatSelect) return;
+    
     // Update format options
-    const katalon = document.querySelector('option[value="katalon"]');
-    const maestro = document.querySelector('option[value="maestro"]');
-    const html = document.querySelector('option[value="html"]');
-    const csv = document.querySelector('option[value="csv"]');
+    const katalon = elements.formatSelect.querySelector('option[value="katalon"]');
+    const maestro = elements.formatSelect.querySelector('option[value="maestro"]');
+    const html = elements.formatSelect.querySelector('option[value="html"]');
+    const csv = elements.formatSelect.querySelector('option[value="csv"]');
     
     if (state.userPlan === 'free') {
       // Disable premium formats but keep them visible
@@ -143,7 +145,7 @@ document.addEventListener('DOMContentLoaded', function() {
       // Add premium labels
       const premiumFormats = [katalon, maestro, html, csv].filter(el => el);
       premiumFormats.forEach(format => {
-        if (!format.textContent.includes('(Pro)')) {
+        if (format && !format.textContent.includes('(Pro)')) {
           format.textContent += ' (Pro)';
         }
       });
@@ -156,6 +158,8 @@ document.addEventListener('DOMContentLoaded', function() {
    */
   async function handleFormSubmit(e) {
     e.preventDefault();
+    
+    if (!elements.urlInput || !elements.output) return;
     
     // Reset session state
     state.sessionId = null;
@@ -184,13 +188,16 @@ document.addEventListener('DOMContentLoaded', function() {
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 25000); // 25 second timeout
       
+      // Ensure we have formatSelect
+      const format = elements.formatSelect ? elements.formatSelect.value : 'plain';
+      
       const response = await fetch('/api/generate-incremental', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           url: url,
           mode: 'first',
-          format: elements.formatSelect.value
+          format: format
         }),
         signal: controller.signal
       });
@@ -209,14 +216,18 @@ document.addEventListener('DOMContentLoaded', function() {
         state.nextElementType = data.nextElementType;
         state.nextElementIndex = data.nextElementIndex;
         state.hasMoreElements = data.hasMoreElements;
-        state.testCases = state.testCases.concat(data.testCases);
-        state.totalTestCases = data.totalTestCases || data.testCases.length;
+        state.testCases = state.testCases.concat(data.testCases || []);
+        state.totalTestCases = data.totalTestCases || (data.testCases ? data.testCases.length : 0);
         
         // Track successful generation
         trackEvent('generate_test_cases', 'usage', url);
         
         // Render test cases
-        renderTestCases(data.testCases);
+        if (data.testCases && data.testCases.length > 0) {
+          renderTestCases(data.testCases);
+        } else {
+          elements.output.innerHTML = '<p>No test cases were generated. Try a different URL.</p>';
+        }
         
         // Show "Generate Next Test" button if more elements are available
         if (data.hasMoreElements && elements.nextTestContainer) {
@@ -225,7 +236,7 @@ document.addEventListener('DOMContentLoaded', function() {
         }
         
         // Show download container
-        if (elements.downloadContainer) {
+        if (elements.downloadContainer && state.testCases.length > 0) {
           elements.downloadContainer.style.display = 'block';
         }
         
@@ -234,7 +245,7 @@ document.addEventListener('DOMContentLoaded', function() {
           elements.upgradeBanner.classList.remove('hidden');
         }
       } else {
-        showError(`Error: ${data.error}`);
+        showError(`Error: ${data.error || 'Unknown error occurred'}`);
         
         // Show upgrade prompt if needed
         if (data.upgradeRequired && elements.upgradeBanner) {
@@ -245,7 +256,7 @@ document.addEventListener('DOMContentLoaded', function() {
       if (error.name === 'AbortError') {
         showError('Request timed out. Please try a simpler website.');
       } else {
-        showError(`Error: ${error.message}`);
+        showError(`Error: ${error.message || 'Unknown error occurred'}`);
       }
     } finally {
       setLoading(false);
@@ -256,7 +267,7 @@ document.addEventListener('DOMContentLoaded', function() {
    * Handle "Generate Next Test" button click
    */
   async function handleGenerateNextTest() {
-    if (!state.sessionId || !state.hasMoreElements) return;
+    if (!state.sessionId || !state.hasMoreElements || !elements.output) return;
     
     // Check free plan limits
     if (state.userPlan === 'free' && state.totalTestCases >= state.freeLimit) {
@@ -270,6 +281,9 @@ document.addEventListener('DOMContentLoaded', function() {
     setLoading(true);
     
     try {
+      // Ensure we have formatSelect
+      const format = elements.formatSelect ? elements.formatSelect.value : 'plain';
+      
       const response = await fetch('/api/generate-incremental', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -278,7 +292,7 @@ document.addEventListener('DOMContentLoaded', function() {
           sessionId: state.sessionId,
           elementType: state.nextElementType,
           elementIndex: state.nextElementIndex,
-          format: elements.formatSelect.value
+          format: format
         })
       });
       
@@ -293,11 +307,13 @@ document.addEventListener('DOMContentLoaded', function() {
         state.nextElementType = data.nextElementType;
         state.nextElementIndex = data.nextElementIndex;
         state.hasMoreElements = data.hasMoreElements;
-        state.testCases = state.testCases.concat(data.testCases);
+        state.testCases = state.testCases.concat(data.testCases || []);
         state.totalTestCases = data.totalTestCases || state.testCases.length;
         
         // Render new test cases
-        renderTestCases(data.testCases, true);
+        if (data.testCases && data.testCases.length > 0) {
+          renderTestCases(data.testCases, true);
+        }
         
         // Update element info
         updateElementInfo();
@@ -310,19 +326,23 @@ document.addEventListener('DOMContentLoaded', function() {
         // Show upgrade banner if free limit reached
         if (data.upgradeRequired && elements.upgradeBanner) {
           elements.upgradeBanner.classList.remove('hidden');
-          elements.nextTestContainer.style.display = 'none';
+          if (elements.nextTestContainer) {
+            elements.nextTestContainer.style.display = 'none';
+          }
         }
       } else {
-        showError(`Error: ${data.error}`);
+        showError(`Error: ${data.error || 'Unknown error occurred'}`);
         
         // Show upgrade prompt if needed
         if (data.upgradeRequired && elements.upgradeBanner) {
           elements.upgradeBanner.classList.remove('hidden');
-          elements.nextTestContainer.style.display = 'none';
+          if (elements.nextTestContainer) {
+            elements.nextTestContainer.style.display = 'none';
+          }
         }
       }
     } catch (error) {
-      showError(`Error: ${error.message}`);
+      showError(`Error: ${error.message || 'Unknown error occurred'}`);
     } finally {
       setLoading(false);
     }
@@ -333,13 +353,16 @@ document.addEventListener('DOMContentLoaded', function() {
    */
   async function handleUpgrade() {
     const selectedPlan = document.querySelector('.plan-option.selected');
-    if (!selectedPlan) return;
+    if (!selectedPlan || !elements.confirmUpgrade) return;
     
     const planType = selectedPlan.getAttribute('data-plan');
+    if (!planType) return;
     
     if (planType === 'enterprise') {
       window.open('mailto:sales@example.com?subject=Enterprise Plan Inquiry', '_blank');
-      elements.upgradeModal.style.display = 'none';
+      if (elements.upgradeModal) {
+        elements.upgradeModal.style.display = 'none';
+      }
       return;
     }
     
@@ -370,7 +393,7 @@ document.addEventListener('DOMContentLoaded', function() {
       }
     } catch (error) {
       console.error('Error:', error);
-      alert('Payment processing error: ' + error.message);
+      alert('Payment processing error: ' + (error.message || 'Unknown error'));
       
       // Reset button
       elements.confirmUpgrade.textContent = 'Upgrade Now';
@@ -383,6 +406,8 @@ document.addEventListener('DOMContentLoaded', function() {
    * @param {String} planType - The plan type
    */
   function simulateSuccessfulUpgrade(planType) {
+    if (!elements.output) return;
+    
     // Update user plan
     state.userPlan = planType;
     localStorage.setItem('userPlan', planType);
@@ -391,16 +416,20 @@ document.addEventListener('DOMContentLoaded', function() {
     if (elements.upgradeBanner) {
       elements.upgradeBanner.classList.add('hidden');
     }
-    elements.upgradeModal.style.display = 'none';
+    if (elements.upgradeModal) {
+      elements.upgradeModal.style.display = 'none';
+    }
     
     // Enable premium formats
-    const formatSelect = elements.formatSelect;
-    for (let i = 0; i < formatSelect.options.length; i++) {
-      formatSelect.options[i].disabled = false;
-      
-      // Remove Pro label
-      const option = formatSelect.options[i];
-      option.textContent = option.textContent.replace(' (Pro)', '');
+    if (elements.formatSelect) {
+      const formatSelect = elements.formatSelect;
+      for (let i = 0; i < formatSelect.options.length; i++) {
+        formatSelect.options[i].disabled = false;
+        
+        // Remove Pro label
+        const option = formatSelect.options[i];
+        option.textContent = option.textContent.replace(' (Pro)', '');
+      }
     }
     
     // Show success message
@@ -410,7 +439,13 @@ document.addEventListener('DOMContentLoaded', function() {
       <p>🎉 Congratulations! You've successfully upgraded to the ${planType.charAt(0).toUpperCase() + planType.slice(1)} plan.</p>
       <p>You now have access to all premium features!</p>
     `;
-    document.querySelector('.container').insertBefore(successMessage, elements.output.parentNode);
+    
+    const container = document.querySelector('.container');
+    if (container) {
+      container.insertBefore(successMessage, elements.output.parentNode);
+    } else {
+      document.body.insertBefore(successMessage, elements.output.parentNode);
+    }
     
     // Enable "Generate Next Test" button if it was hidden
     if (elements.nextTestContainer && state.hasMoreElements) {
@@ -419,7 +454,9 @@ document.addEventListener('DOMContentLoaded', function() {
     
     // Remove success message after 5 seconds
     setTimeout(() => {
-      successMessage.remove();
+      if (successMessage.parentNode) {
+        successMessage.parentNode.removeChild(successMessage);
+      }
     }, 5000);
   }
   
@@ -429,51 +466,66 @@ document.addEventListener('DOMContentLoaded', function() {
    * @param {Boolean} append - Whether to append or replace existing content
    */
   function renderTestCases(testCases, append = false) {
-    if (!testCases || testCases.length === 0) return;
+    if (!testCases || testCases.length === 0 || !elements.output) return;
     
     // Clear output or create list container if not appending
     if (!append) {
       elements.output.innerHTML = '';
       
-      if (!elements.testCaseList) {
-        elements.testCaseList = document.createElement('div');
-        elements.testCaseList.id = 'test-case-list';
-        elements.output.appendChild(elements.testCaseList);
+      const existingList = document.getElementById('test-case-list');
+      if (!existingList) {
+        const newList = document.createElement('div');
+        newList.id = 'test-case-list';
+        elements.output.appendChild(newList);
       }
     }
     
     // Get or create test case list
-    const testCaseList = elements.testCaseList || elements.output;
+    const testCaseList = document.getElementById('test-case-list') || elements.output;
     
     // Add test cases
     testCases.forEach(testCase => {
+      if (!testCase) return; // Skip undefined test cases
+      
       const testCaseElement = document.createElement('div');
       testCaseElement.className = 'test-case';
-      testCaseElement.setAttribute('data-id', testCase.id);
+      testCaseElement.setAttribute('data-id', testCase.id || 'unknown');
       
       // Build HTML content
       let content = `
         <div class="test-case-header">
-          <h3>${testCase.title}</h3>
-          <span class="priority priority-${testCase.priority}">${testCase.priority}</span>
+          <h3>${testCase.title || 'Untitled Test Case'}</h3>
+          <span class="priority priority-${testCase.priority || 'Medium'}">${testCase.priority || 'Medium'}</span>
         </div>
-        <p>${testCase.description}</p>
+        <p>${testCase.description || 'No description provided'}</p>
         <div class="test-steps">
           <h4>Test Steps:</h4>
           <ol>
       `;
       
       // Add steps
-      testCase.steps.forEach(step => {
+      if (testCase.steps && testCase.steps.length > 0) {
+        testCase.steps.forEach(step => {
+          if (!step) return; // Skip undefined steps
+          
+          content += `
+            <li>
+              <div class="step-content">
+                <p><strong>Action:</strong> ${step.action || 'No action specified'}</p>
+                <p><strong>Expected:</strong> ${step.expected || 'No expected result specified'}</p>
+              </div>
+            </li>
+          `;
+        });
+      } else {
         content += `
           <li>
             <div class="step-content">
-              <p><strong>Action:</strong> ${step.action}</p>
-              <p><strong>Expected:</strong> ${step.expected}</p>
+              <p>No steps defined for this test case</p>
             </div>
           </li>
         `;
-      });
+      }
       
       content += `
           </ol>
@@ -538,7 +590,7 @@ document.addEventListener('DOMContentLoaded', function() {
    * @param {String} format - Export format
    */
   async function handleDownload(format) {
-    if (!state.sessionId || state.testCases.length === 0) {
+    if (!state.sessionId || !state.testCases || state.testCases.length === 0) {
       showError('No test cases to download');
       return;
     }
@@ -578,7 +630,7 @@ document.addEventListener('DOMContentLoaded', function() {
         // Trigger download
         downloadFile(data.exportData, data.filename, data.contentType);
       } else {
-        showError(`Export error: ${data.error}`);
+        showError(`Export error: ${data.error || 'Unknown error'}`);
         
         // Show upgrade banner if needed
         if (data.upgradeRequired && elements.upgradeBanner) {
@@ -586,7 +638,7 @@ document.addEventListener('DOMContentLoaded', function() {
         }
       }
     } catch (error) {
-      showError(`Download error: ${error.message}`);
+      showError(`Download error: ${error.message || 'Unknown error'}`);
     } finally {
       setLoading(false);
     }
@@ -599,12 +651,17 @@ document.addEventListener('DOMContentLoaded', function() {
    * @param {String} contentType - Content type
    */
   function downloadFile(content, filename, contentType) {
-    const blob = new Blob([content], { type: contentType });
+    if (!content) {
+      showError('No content to download');
+      return;
+    }
+    
+    const blob = new Blob([content], { type: contentType || 'text/plain' });
     const url = URL.createObjectURL(blob);
     
     const a = document.createElement('a');
     a.href = url;
-    a.download = filename;
+    a.download = filename || 'download.txt';
     document.body.appendChild(a);
     a.click();
     
@@ -619,6 +676,7 @@ document.addEventListener('DOMContentLoaded', function() {
    * @param {String} message - Error message
    */
   function showError(message) {
+    if (!elements.output) return;
     elements.output.innerHTML = `<p class="error">❌ ${message}</p>`;
   }
   
