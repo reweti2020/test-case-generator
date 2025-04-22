@@ -23,16 +23,29 @@ async function verifySubscription(userId) {
 }
 
 module.exports = async (req, res) => {
+  // Detailed logging
+  console.log('Incoming Request to Generate Incremental');
+  console.log('Full Request Body:', JSON.stringify(req.body, null, 2));
+  console.log('Request Headers:', JSON.stringify(req.headers, null, 2));
+
   const { url, mode, sessionId, elementType, elementIndex, format } = req.body;
   
   // Get user information from request
   const userId = req.headers.authorization?.split(' ')[1];
   
   try {
+    // Log before verifying subscription
+    console.log('Verifying Subscription', { userId });
+
     // Check if user has premium subscription
     const isPremium = await verifySubscription(userId);
     const userPlan = isPremium ? 'pro' : 'free';
     
+    console.log('Subscription Verification Result:', { 
+      isPremium, 
+      userPlan 
+    });
+
     const options = {
       mode: mode || 'first',
       sessionId,
@@ -41,6 +54,8 @@ module.exports = async (req, res) => {
       format: format || 'plain',
       userPlan
     };
+    
+    console.log('Prepared Options:', JSON.stringify(options, null, 2));
     
     // For first request, URL is required
     if (options.mode === 'first' && !url) {
@@ -61,6 +76,8 @@ module.exports = async (req, res) => {
     // Generate test cases
     const result = await generateTestCases(url, options);
     
+    console.log('Generation Result:', JSON.stringify(result, null, 2));
+
     // Check if premium format was requested by non-premium user
     if (format && ['katalon', 'maestro', 'testrail'].includes(format) && !isPremium) {
       return res.status(200).json({
@@ -87,10 +104,19 @@ module.exports = async (req, res) => {
     // Return the result
     res.status(200).json(result);
   } catch (error) {
+    // Detailed error logging
     console.error('Error in generate-incremental:', error);
+    console.error('Error Name:', error.name);
+    console.error('Error Message:', error.message);
+    console.error('Error Stack:', error.stack);
+
     res.status(500).json({
       success: false,
-      error: `Server error: ${error.message}`
+      error: `Server error: ${error.message}`,
+      errorDetails: process.env.NODE_ENV === 'development' ? {
+        name: error.name,
+        stack: error.stack
+      } : undefined
     });
   }
 };
