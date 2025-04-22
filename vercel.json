@@ -5,17 +5,15 @@
     { "src": "api/**/*.js", "use": "@vercel/node" }
   ],
   "routes": [
-    { "src": "/api/(.*)", "dest": "/api/$1.js" },
+    { "src": "/api/([^/]+)$", "dest": "/api/$1.js" },
+    { "src": "/api/([^/]+).js", "dest": "/api/$1.js" },
     { "handle": "filesystem" },
-    { "src": "/(.*)", "dest": "/public/index.html" }
+    { "src": "/(.*)", "dest": "/public/$1" }
   ],
   "functions": {
     "api/**/*.js": {
       "memory": 1024,
       "maxDuration": 10
     }
-  },
-  "env": {
-    "NODE_ENV": "production"
   }
 }
