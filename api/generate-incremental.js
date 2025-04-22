@@ -44,8 +44,8 @@ module.exports = async (req, res) => {
       });
     }
 
-    // Determine user plan (in a real app, extract from auth token)
-    const userPlan = 'pro'; // Force pro access for testing
+    // Force pro access for testing
+    const userPlan = 'pro';
     
     // Process the request based on mode
     let result;
@@ -69,7 +69,7 @@ module.exports = async (req, res) => {
 /**
  * Generate the first test case by analyzing the website
  */
-async function generateFirstTest(url, userPlan = 'free') {
+async function generateFirstTest(url, userPlan = 'pro') {
   try {
     console.log(`Fetching URL: ${url}`);
     
@@ -116,7 +116,7 @@ async function generateFirstTest(url, userPlan = 'free') {
       });
     });
     
-    // Extract forms - limit to first 100
+    // Extract forms - limit to first 10
     pageData.forms = [];
     $('form').slice(0, 10).each((i, el) => {
       const $form = $(el);
@@ -127,7 +127,7 @@ async function generateFirstTest(url, userPlan = 'free') {
       });
     });
     
-    // Extract links - limit to first 150
+    // Extract links - limit to first 15
     pageData.links = [];
     $('a[href]').slice(0, 15).each((i, el) => {
       const $link = $(el);
@@ -138,7 +138,7 @@ async function generateFirstTest(url, userPlan = 'free') {
       });
     });
     
-    // Extract inputs - limit to first 150
+    // Extract inputs - limit to first 15
     pageData.inputs = [];
     $('input[type!="submit"][type!="button"], textarea, select').slice(0, 15).each((i, el) => {
       const $input = $(el);
@@ -200,10 +200,9 @@ async function generateFirstTest(url, userPlan = 'free') {
                      (pageData.inputs.length > 0 ? 'input' : 
                      (pageData.links.length > 0 ? 'link' : null)));
     
-    // Free plan limit
-    const freeLimit = 100;
-    const hasMoreElements = (userPlan !== 'free' || pageCache[newSessionId].testCases.length < freeLimit) && 
-                      (pageData.buttons.length > 0 || pageData.forms.length > 0 || 
+    // Set very high limit for testing
+    const freeLimit = 9999;
+    const hasMoreElements = (pageData.buttons.length > 0 || pageData.forms.length > 0 || 
                        pageData.links.length > 0 || pageData.inputs.length > 0);
     
     console.log('First test case generated successfully');
@@ -217,10 +216,34 @@ async function generateFirstTest(url, userPlan = 'free') {
       nextElementIndex: 0,
       hasMoreElements,
       totalTestCases: pageCache[newSessionId].testCases.length,
-      upgradeRequired: userPlan === 'free' && pageCache[newSessionId].testCases.length >= freeLimit
+      upgradeRequired: false // Always false for testing
     };
   } catch (error) {
     console.error('Error generating first test:', error);
+    
+    // Provide more user-friendly error messages based on error type
+    if (error.code === 'ENOTFOUND') {
+      return { 
+        success: false, 
+        error: `Could not resolve domain name. Please check that "${url}" is correct and publicly accessible.`
+      };
+    } else if (error.code === 'ETIMEDOUT' || error.code === 'ESOCKETTIMEDOUT') {
+      return { 
+        success: false, 
+        error: `Connection to "${url}" timed out. The site might be slow or unreachable.`
+      };
+    } else if (error.code === 'ECONNREFUSED') {
+      return { 
+        success: false, 
+        error: `Connection to "${url}" was refused. The site might be blocking our access.`
+      };
+    } else if (error.response && error.response.status) {
+      return { 
+        success: false, 
+        error: `Server responded with status ${error.response.status} when trying to access "${url}".`
+      };
+    }
+    
     return { 
       success: false, 
       error: `Test generation error: ${error.message || 'Unknown error'}`
@@ -231,7 +254,7 @@ async function generateFirstTest(url, userPlan = 'free') {
 /**
  * Generate the next test case from session data
  */
-function generateNextTest(sessionId, elementType, elementIndex, userPlan = 'free') {
+function generateNextTest(sessionId, elementType, elementIndex, userPlan = 'pro') {
   if (!sessionId || !pageCache[sessionId]) {
     return {
       success: false,
@@ -241,16 +264,9 @@ function generateNextTest(sessionId, elementType, elementIndex, userPlan = 'free
   
   const session = pageCache[sessionId];
   
-  // Check free plan limits
-  const freeLimit = 100;
-  if (userPlan === 'free' && session.testCases.length >= freeLimit) {
-    return {
-      success: false,
-      error: 'Free plan limit reached',
-      upgradeRequired: true,
-      totalTestCases: session.testCases.length
-    };
-  }
+  // Disable free plan check during testing
+  const freeLimit = 9999; // Set very high limit
+  // Skipping the check to allow unlimited tests
   
   // Get element collection based on type
   const elements = session.pageData[`${elementType}s`] || [];
@@ -318,8 +334,8 @@ function generateNextTest(sessionId, elementType, elementIndex, userPlan = 'free
     }
   }
   
-  // Check if there are more elements to process
-  const hasMoreElements = (userPlan !== 'free' || session.testCases.length < freeLimit) && nextElementType !== null;
+  // Always allow more elements for testing
+  const hasMoreElements = nextElementType !== null;
   
   return {
     success: true,
@@ -328,7 +344,7 @@ function generateNextTest(sessionId, elementType, elementIndex, userPlan = 'free
     nextElementIndex,
     hasMoreElements,
     totalTestCases: session.testCases.length,
-    upgradeRequired: userPlan === 'free' && session.testCases.length >= freeLimit
+    upgradeRequired: false // Always false for testing
   };
 }
 
@@ -446,3 +462,5 @@ function generateInputTest(pageData, input, index) {
     ]
   };
 }
+
+// Export for use in other files
