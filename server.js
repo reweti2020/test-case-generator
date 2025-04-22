@@ -20,6 +20,7 @@ app.post('/api/generate-incremental', require('./api/generate-incremental'));
 app.post('/api/export-tests', require('./api/export-test'));
 app.post('/api/create-checkout-session', require('./api/create-checkout-session'));
 app.post('/api/test', require('./api/test')); // Simple test endpoint
+app.post('/api/debug-element', require('./api/debug-element'));
 
 // Regular cleanup of old sessions (every hour)
 setInterval(() => {
