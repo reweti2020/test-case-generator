@@ -82,6 +82,11 @@ document.addEventListener('DOMContentLoaded', function() {
     // Initialize correction UI
     initCorrectionUI();
     
+    // Update button text for batch generation
+    if (elements.generateNextTest) {
+      elements.generateNextTest.textContent = 'Generate 5 More Tests';
+    }
+    
     // Handle promo banner close
     if (elements.closePromo) {
       elements.closePromo.addEventListener('click', () => {
@@ -313,7 +318,8 @@ document.addEventListener('DOMContentLoaded', function() {
           processed: state.processed,
           elementType: state.nextElementType,
           elementIndex: state.nextElementIndex,
-          format: format
+          format: format,
+          batchSize: 5  // Request 5 tests at once
         })
       });
       
@@ -513,23 +519,14 @@ document.addEventListener('DOMContentLoaded', function() {
   function renderTestCases(testCases, append = false) {
     if (!testCases || testCases.length === 0 || !elements.output) return;
     
-    // Clear output or create list container if not appending
+    // Create or get test case list container
     if (!append) {
       elements.output.innerHTML = '';
+      const newList = document.createElement('div');
+      newList.id = 'test-case-list';
+      elements.output.appendChild(newList);
       
-      const existingList = document.getElementById('test-case-list');
-      if (!existingList) {
-        const newList = document.createElement('div');
-        newList.id = 'test-case-list';
-        elements.output.appendChild(newList);
-      }
-    }
-    
-    // Get or create test case list
-    const testCaseList = document.getElementById('test-case-list') || elements.output;
-    
-    // Add help info if this is not appending
-    if (!append) {
+      // Add help info
       const helpInfo = document.createElement('div');
       helpInfo.className = 'help-info';
       helpInfo.innerHTML = `
@@ -538,68 +535,81 @@ document.addEventListener('DOMContentLoaded', function() {
           <strong>Notice:</strong> If test cases don't match the website exactly, use the "Edit" button to correct them. Your changes will be saved for future test generations.
         </div>
       `;
-      testCaseList.appendChild(helpInfo);
+      newList.appendChild(helpInfo);
     }
+    
+    const testCaseList = document.getElementById('test-case-list') || elements.output;
     
     // Add test cases
     testCases.forEach(testCase => {
-      if (!testCase) return; // Skip undefined test cases
+      if (!testCase) return;
       
       const testCaseElement = document.createElement('div');
-      testCaseElement.className = 'test-case';
+      testCaseElement.className = 'test-case collapsed';
       testCaseElement.setAttribute('data-id', testCase.id || 'unknown');
       
-      // Build HTML content
-      let content = `
-        <div class="test-case-header">
+      // Create header (always visible)
+      const header = document.createElement('div');
+      header.className = 'test-case-header';
+      header.innerHTML = `
+        <div class="test-case-title-bar">
+          <div class="expand-icon">▶</div>
           <h3>${testCase.title || 'Untitled Test Case'}</h3>
-          <div class="test-case-actions">
-            <button class="edit-button" data-id="${testCase.id}">Edit</button>
-            <span class="priority priority-${testCase.priority || 'Medium'}">${testCase.priority || 'Medium'}</span>
-          </div>
         </div>
+        <div class="test-case-actions">
+          <button class="edit-button" data-id="${testCase.id}">Edit</button>
+          <span class="priority priority-${testCase.priority || 'Medium'}">${testCase.priority || 'Medium'}</span>
+        </div>
+      `;
+      
+      // Create content (hidden by default)
+      const content = document.createElement('div');
+      content.className = 'test-case-content';
+      content.style.display = 'none';
+      content.innerHTML = `
         <p>${testCase.description || 'No description provided'}</p>
         <div class="test-steps">
           <h4>Test Steps:</h4>
           <ol>
-      `;
-      
-      // Add steps
-      if (testCase.steps && testCase.steps.length > 0) {
-        testCase.steps.forEach(step => {
-          if (!step) return; // Skip undefined steps
-          
-          content += `
-            <li>
-              <div class="step-content">
-                <p><strong>Action:</strong> ${step.action || 'No action specified'}</p>
-                <p><strong>Expected:</strong> ${step.expected || 'No expected result specified'}</p>
-              </div>
-            </li>
-          `;
-        });
-      } else {
-        content += `
-          <li>
-            <div class="step-content">
-              <p>No steps defined for this test case</p>
-            </div>
-          </li>
-        `;
-      }
-      
-      content += `
+            ${testCase.steps && testCase.steps.length > 0 ? 
+              testCase.steps.map(step => `
+                <li>
+                  <div class="step-content">
+                    <p><strong>Action:</strong> ${step.action || 'No action specified'}</p>
+                    <p><strong>Expected:</strong> ${step.expected || 'No expected result specified'}</p>
+                  </div>
+                </li>
+              `).join('') : 
+              '<li><div class="step-content"><p>No steps defined for this test case</p></div></li>'
+            }
           </ol>
         </div>
       `;
       
-      testCaseElement.innerHTML = content;
+      // Add click handler to toggle expansion
+      header.querySelector('.test-case-title-bar').addEventListener('click', () => {
+        const isCollapsed = testCaseElement.classList.contains('collapsed');
+        if (isCollapsed) {
+          testCaseElement.classList.remove('collapsed');
+          testCaseElement.classList.add('expanded');
+          content.style.display = 'block';
+          header.querySelector('.expand-icon').textContent = '▼';
+        } else {
+          testCaseElement.classList.remove('expanded');
+          testCaseElement.classList.add('collapsed');
+          content.style.display = 'none';
+          header.querySelector('.expand-icon').textContent = '▶';
+        }
+      });
+      
+      testCaseElement.appendChild(header);
+      testCaseElement.appendChild(content);
       testCaseList.appendChild(testCaseElement);
     });
     
     // Update test case counter
     if (elements.testCaseCounter) {
-      elements.testCaseCounter.textContent = `Showing ${state.testCases.length} test case${state.testCases.length !== 1 ? 's' : ''}`;
+      elements.testCaseCounter.textContent = `${state.testCases.length} test case${state.testCases.length !== 1 ? 's' : ''}`;
     }
   }
   
@@ -861,11 +871,35 @@ document.addEventListener('DOMContentLoaded', function() {
   }
   
   /**
-   * Update element info text
+   * Update element info and progress display
    */
   function updateElementInfo() {
-    if (!elements.elementInfo || !state.nextElementType) return;
+    if (!elements.elementInfo || !state.pageData) return;
     
+    // Calculate progress percentages
+    const buttonProgress = state.pageData.buttons.length > 0 ? 
+      Math.round((state.processed.buttons / state.pageData.buttons.length) * 100) : 100;
+    
+    const formProgress = state.pageData.forms.length > 0 ? 
+      Math.round((state.processed.forms / state.pageData.forms.length) * 100) : 100;
+    
+    const linkProgress = state.pageData.links.length > 0 ? 
+      Math.round((state.processed.links / state.pageData.links.length) * 100) : 100;
+    
+    const inputProgress = state.pageData.inputs.length > 0 ? 
+      Math.round((state.processed.inputs / state.pageData.inputs.length) * 100) : 100;
+    
+    // Calculate overall progress
+    const totalElements = state.pageData.buttons.length + state.pageData.forms.length + 
+                        state.pageData.links.length + state.pageData.inputs.length;
+    
+    const processedElements = state.processed.buttons + state.processed.forms + 
+                            state.processed.links + state.processed.inputs;
+    
+    const overallProgress = totalElements > 0 ? 
+      Math.round((processedElements / totalElements) * 100) : 100;
+    
+    // Determine next element text
     const elementTypes = {
       button: 'Button',
       form: 'Form',
@@ -873,8 +907,19 @@ document.addEventListener('DOMContentLoaded', function() {
       input: 'Input Field'
     };
     
-    const elementType = elementTypes[state.nextElementType] || 'Element';
-    elements.elementInfo.textContent = `Next element: ${elementType} #${state.nextElementIndex + 1}`;
+    const nextElementText = state.nextElementType ? 
+      `Next up: ${elementTypes[state.nextElementType] || 'Element'} #${state.nextElementIndex + 1}` : 
+      'All elements processed';
+    
+    // Update progress display
+    elements.elementInfo.innerHTML = `
+      <div class="progress-info">
+        <div class="progress-text">${nextElementText} - ${overallProgress}% complete</div>
+        <div class="progress-bar">
+          <div class="progress-fill" style="width: ${overallProgress}%"></div>
+        </div>
+      </div>
+    `;
   }
   
   /**
