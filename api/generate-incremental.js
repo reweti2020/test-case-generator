@@ -2,9 +2,6 @@
 const axios = require('axios');
 const cheerio = require('cheerio');
 
-// In-memory storage for page analysis results (Note: this will reset when serverless function cold starts)
-const pageCache = {};
-
 /**
  * API handler for test case generation
  */
@@ -24,10 +21,10 @@ module.exports = async (req, res) => {
   
   try {
     // Extract request body
-    const { url, mode, sessionId, elementType, elementIndex, format } = req.body || {};
+    const { url, mode, pageData, processed, elementType, elementIndex, format } = req.body || {};
     
     // Log request for debugging
-    console.log(`Request params: ${JSON.stringify({ url, mode, sessionId, elementType, elementIndex, format })}`);
+    console.log(`Request params: mode=${mode}, elementType=${elementType}, elementIndex=${elementIndex}`);
     
     // Check if all required fields are present
     if (mode === 'first' && !url) {
@@ -37,10 +34,10 @@ module.exports = async (req, res) => {
       });
     }
     
-    if (mode === 'next' && !sessionId) {
+    if (mode === 'next' && (!pageData || !processed)) {
       return res.status(400).json({
         success: false,
-        error: 'Session ID is required for subsequent test generation'
+        error: 'Page data and processed state are required for subsequent test generation'
       });
     }
 
@@ -53,7 +50,7 @@ module.exports = async (req, res) => {
     if (mode === 'first') {
       result = await generateFirstTest(url, userPlan);
     } else {
-      result = generateNextTest(sessionId, elementType, elementIndex, userPlan);
+      result = generateNextTest(pageData, processed, elementType, elementIndex, userPlan);
     }
     
     return res.status(200).json(result);
@@ -182,25 +179,14 @@ async function generateFirstTest(url, userPlan = 'pro') {
       });
     });
         
-    console.log('HTML parsed successfully, creating session...');
-        
-    // Generate a session ID and store page data
-    const newSessionId = Math.random().toString(36).substring(2, 15);
-    pageCache[newSessionId] = {
-      pageData,
-      processed: {
-        buttons: 0,
-        forms: 0,
-        links: 0, 
-        inputs: 0
-      },
-      hasMore: {
-        buttons: pageData.buttons.length > 0,
-        forms: pageData.forms.length > 0,
-        links: pageData.links.length > 0,
-        inputs: pageData.inputs.length > 0
-      },
-      testCases: []
+    console.log('HTML parsed successfully');
+    
+    // Initial processed state
+    const processed = {
+      buttons: 0,
+      forms: 0,
+      links: 0, 
+      inputs: 0
     };
         
     // Generate first test (always page verification)
@@ -223,32 +209,29 @@ async function generateFirstTest(url, userPlan = 'pro') {
       ]
     };
         
-    // Add the test case to the cache
-    pageCache[newSessionId].testCases.push(firstTest);
-        
-    // Determine next element to test
+    // Determine next element type to test
     const nextElementType = pageData.buttons.length > 0 ? 'button' : 
                      (pageData.forms.length > 0 ? 'form' : 
                      (pageData.inputs.length > 0 ? 'input' : 
                      (pageData.links.length > 0 ? 'link' : null)));
         
     // Set very high limit for testing
-    const freeLimit = 9999;
     const hasMoreElements = (pageData.buttons.length > 0 || pageData.forms.length > 0 || 
                        pageData.links.length > 0 || pageData.inputs.length > 0);
         
     console.log('First test case generated successfully');
         
-    // Return first test with session info
+    // Return complete data to client
     return { 
       success: true, 
-      sessionId: newSessionId,
+      pageData: pageData,        // Send complete page data
+      processed: processed,      // Send initial processing state
       testCases: [firstTest],
       nextElementType,
       nextElementIndex: 0,
       hasMoreElements,
-      totalTestCases: pageCache[newSessionId].testCases.length,
-      upgradeRequired: false // Always false for testing
+      totalTestCases: 1,
+      upgradeRequired: false
     };
   } catch (error) {
     console.error('Error generating first test:', error);
@@ -284,24 +267,21 @@ async function generateFirstTest(url, userPlan = 'pro') {
 }
 
 /**
- * Generate the next test case from session data
+ * Generate the next test case using client-provided data
  */
-function generateNextTest(sessionId, elementType, elementIndex, userPlan = 'pro') {
-  if (!sessionId || !pageCache[sessionId]) {
+function generateNextTest(pageData, processed, elementType, elementIndex, userPlan = 'pro') {
+  if (!pageData || !processed) {
     return {
       success: false,
-      error: 'Invalid or expired session ID'
+      error: 'Missing page data or processing state'
     };
   }
   
-  const session = pageCache[sessionId];
-  
-  // Disable free plan check during testing
-  const freeLimit = 9999; // Set very high limit
-  // Skipping the check to allow unlimited tests
+  console.log(`Generating test for ${elementType} #${elementIndex}`);
+  console.log(`Processing state:`, processed);
   
   // Get element collection based on type
-  const elements = session.pageData[`${elementType}s`] || [];
+  const elements = pageData[`${elementType}s`] || [];
   
   if (elementIndex >= elements.length) {
     return {
@@ -318,16 +298,16 @@ function generateNextTest(sessionId, elementType, elementIndex, userPlan = 'pro'
   
   switch (elementType) {
     case 'button':
-      testCase = generateButtonTest(session.pageData, element, session.processed.buttons);
+      testCase = generateButtonTest(pageData, element, processed.buttons);
       break;
     case 'form':
-      testCase = generateFormTest(session.pageData, element, session.processed.forms);
+      testCase = generateFormTest(pageData, element, processed.forms);
       break;
     case 'link':
-      testCase = generateLinkTest(session.pageData, element, session.processed.links);
+      testCase = generateLinkTest(pageData, element, processed.links);
       break;
     case 'input':
-      testCase = generateInputTest(session.pageData, element, session.processed.inputs);
+      testCase = generateInputTest(pageData, element, processed.inputs);
       break;
     default:
       testCase = null;
@@ -340,27 +320,24 @@ function generateNextTest(sessionId, elementType, elementIndex, userPlan = 'pro'
     };
   }
   
-  // Add the test case to the cache
-  session.testCases.push(testCase);
-  
   // Update processed count
-  session.processed[`${elementType}s`]++;
+  processed[`${elementType}s`]++;
   
   // Find next element type to process
   let nextElementType = null;
   let nextElementIndex = 0;
   
   // First try the current element type
-  if (session.processed[`${elementType}s`] < session.pageData[`${elementType}s`].length) {
+  if (processed[`${elementType}s`] < pageData[`${elementType}s`].length) {
     nextElementType = elementType;
-    nextElementIndex = session.processed[`${elementType}s`];
+    nextElementIndex = processed[`${elementType}s`];
   } else {
     // Try other element types
     const types = ['button', 'form', 'input', 'link'];
     for (const type of types) {
-      if (session.processed[`${type}s`] < session.pageData[`${type}s`].length) {
+      if (processed[`${type}s`] < pageData[`${type}s`].length) {
         nextElementType = type;
-        nextElementIndex = session.processed[`${type}s`];
+        nextElementIndex = processed[`${type}s`];
         break;
       }
     }
@@ -369,18 +346,32 @@ function generateNextTest(sessionId, elementType, elementIndex, userPlan = 'pro'
   // Always allow more elements for testing
   const hasMoreElements = nextElementType !== null;
   
+  // Calculate total test cases
+  const totalTestCases = 1 + // Page test
+                        processed.buttons +
+                        processed.forms +
+                        processed.links +
+                        processed.inputs;
+  
+  console.log(`Test generated successfully. Next: ${nextElementType} #${nextElementIndex}`);
+  
+  // Return updated state to client
   return {
     success: true,
+    pageData: pageData,        // Send back complete page data
+    processed: processed,      // Send updated processing state
     testCases: [testCase],
     nextElementType,
     nextElementIndex,
     hasMoreElements,
-    totalTestCases: session.testCases.length,
-    upgradeRequired: false // Always false for testing
+    totalTestCases: totalTestCases,
+    upgradeRequired: false
   };
 }
 
-// Helper functions to generate specific test cases
+/**
+ * Generate a button test with intelligent expectations
+ */
 function generateButtonTest(pageData, button, index) {
   // Ensure we have a valid button text
   const buttonText = button.text || button.id || 'Unnamed Button';
@@ -388,27 +379,38 @@ function generateButtonTest(pageData, button, index) {
                          button.id ? `with ID "${button.id}"` : 
                          `#${index + 1}`;
   
-  // Generate intelligent expectation
+  // Generate specific expected result based on button text
   let expectedResult = 'Button responds to the click (page navigates or action occurs)';
   
-  // Simple inference without complex functions
+  // Simple inference implementation
   const lowerButtonText = buttonText.toLowerCase();
   if (lowerButtonText.includes('search') || lowerButtonText.includes('find')) {
-    expectedResult = 'Search results are displayed';
+    expectedResult = 'Search results are displayed based on the search criteria';
   } else if (lowerButtonText.includes('login') || lowerButtonText.includes('sign in')) {
-    expectedResult = 'User is logged in or login form is displayed';
-  } else if (lowerButtonText.includes('submit') || lowerButtonText.includes('save')) {
-    expectedResult = 'Form is submitted and confirmation is displayed';
-  } else if (lowerButtonText.includes('menu') || lowerButtonText.includes('nav')) {
-    expectedResult = 'Menu or navigation options are displayed';
+    expectedResult = 'User is logged in successfully or login form is displayed';
+  } else if (lowerButtonText.includes('register') || lowerButtonText.includes('sign up')) {
+    expectedResult = 'Registration form is displayed or user is registered';
+  } else if (lowerButtonText.includes('submit') || lowerButtonText.includes('send') || 
+             lowerButtonText.includes('save') || lowerButtonText.includes('apply')) {
+    expectedResult = 'Form is submitted and appropriate confirmation is displayed';
   } else if (lowerButtonText.includes('download')) {
-    expectedResult = 'File download begins';
+    expectedResult = 'File download begins or download options are presented';
+  } else if (lowerButtonText.includes('menu') || lowerButtonText.includes('navigation')) {
+    expectedResult = 'Menu or navigation options are displayed';
+  } else if (lowerButtonText.includes('compar') || lowerButtonText.includes('table')) {
+    expectedResult = 'Comparison table is displayed to the user';
+  } else if (lowerButtonText.includes('close') || lowerButtonText.includes('hide') || 
+             lowerButtonText.includes('cancel') || lowerButtonText.includes('dismiss')) {
+    expectedResult = 'The associated content is hidden or closed';
+  } else if (lowerButtonText.includes('add') || lowerButtonText.includes('create') || 
+             lowerButtonText.includes('new')) {
+    expectedResult = 'New item creation form/option is displayed';
   }
   
   return {
     id: `TC_BTN_${index + 1}`,
     title: `Test Button: ${buttonText}`,
-    description: `Verify that the button works correctly`,
+    description: `Verify that the "${buttonText}" button works correctly`,
     priority: 'Medium',
     steps: [
       {
@@ -430,6 +432,9 @@ function generateButtonTest(pageData, button, index) {
   };
 }
 
+/**
+ * Generate a form test
+ */
 function generateFormTest(pageData, form, index) {
   return {
     id: `TC_FORM_${index + 1}`,
@@ -461,31 +466,62 @@ function generateFormTest(pageData, form, index) {
   };
 }
 
+/**
+ * Generate a link test with intelligent expectations
+ */
 function generateLinkTest(pageData, link, index) {
-  // Add simple intelligent expectations
-  let expectedResult = `Link navigates to ${link.href || 'correct destination'}`;
+  const linkText = link.text || link.href || 'Unnamed Link';
+  const linkIdentifier = link.text ? `with text "${link.text}"` : 
+                       link.id ? `with ID "${link.id}"` : 
+                       `#${index + 1}`;
   
-  // Simple inference
-  const lowerLinkText = (link.text || '').toLowerCase();
+  // Generate specific expected result
+  let expectedResult = `Link navigates to the correct destination`;
+  
+  // Simple inference based on href and text
   const lowerHref = (link.href || '').toLowerCase();
+  const lowerText = linkText.toLowerCase();
   
   if (lowerHref.startsWith('#')) {
-    expectedResult = `Page scrolls to the "${link.href.substring(1)}" section`;
+    const anchorName = link.href.substring(1);
+    expectedResult = `Page scrolls to the "${anchorName}" section`;
   } else if (lowerHref.startsWith('mailto:')) {
-    expectedResult = 'Email client opens';
-  } else if (lowerHref.includes('.pdf') || lowerHref.includes('.doc')) {
-    expectedResult = 'File download begins';
-  } else if (lowerLinkText.includes('home')) {
+    expectedResult = 'Email client opens with the specified email address';
+  } else if (lowerHref.startsWith('tel:')) {
+    expectedResult = 'Phone dialer opens with the specified phone number';
+  } else if (lowerHref.includes('.pdf') || lowerHref.includes('.doc') || 
+             lowerHref.includes('.xls') || lowerHref.includes('.zip')) {
+    expectedResult = 'File download begins for the linked document';
+  } else if (lowerText.includes('home')) {
     expectedResult = 'User is navigated to the Home page';
-  } else if (lowerLinkText.includes('about')) {
+  } else if (lowerText.includes('about')) {
     expectedResult = 'User is navigated to the About page';
-  } else if (lowerLinkText.includes('contact')) {
+  } else if (lowerText.includes('contact')) {
     expectedResult = 'User is navigated to the Contact page';
+  } else if (lowerText.includes('login') || lowerText.includes('sign in')) {
+    expectedResult = 'User is navigated to the Login page';
+  } else if (lowerText.includes('register') || lowerText.includes('sign up')) {
+    expectedResult = 'User is navigated to the Registration page';
+  } else if (lowerText.includes('pricing')) {
+    expectedResult = 'User is navigated to the Pricing page';
+  } else if (lowerText.includes('blog') || lowerText.includes('news')) {
+    expectedResult = 'User is navigated to the Blog/News page';
+  } else if (lowerHref.length > 0 && !lowerHref.startsWith('#')) {
+    try {
+      // Try to extract a descriptive part from the URL
+      const urlParts = lowerHref.replace(/https?:\/\//, '').split('/');
+      const lastPart = urlParts[urlParts.length - 1].replace(/\..*$/, '').replace(/[-_]/g, ' ');
+      if (lastPart && lastPart.length > 0 && lastPart !== '/' && lastPart !== '') {
+        expectedResult = `User is navigated to the ${lastPart.charAt(0).toUpperCase() + lastPart.slice(1)} page`;
+      }
+    } catch (e) {
+      // If URL parsing fails, use default
+    }
   }
   
   return {
     id: `TC_LINK_${index + 1}`,
-    title: `Test Link: ${link.text || link.href || 'Unnamed Link'}`,
+    title: `Test Link: ${linkText}`,
     description: `Verify that the link navigates to the correct destination`,
     priority: 'Medium',
     steps: [
@@ -496,7 +532,7 @@ function generateLinkTest(pageData, link, index) {
       },
       {
         step: 2,
-        action: `Find link ${link.text ? `with text "${link.text}"` : link.id ? `with ID "${link.id}"` : index + 1}`,
+        action: `Find link ${linkIdentifier}`,
         expected: 'Link is visible on the page'
       },
       {
@@ -508,6 +544,9 @@ function generateLinkTest(pageData, link, index) {
   };
 }
 
+/**
+ * Generate an input field test
+ */
 function generateInputTest(pageData, input, index) {
   return {
     id: `TC_INPUT_${index + 1}`,
@@ -538,6 +577,3 @@ function generateInputTest(pageData, input, index) {
     ]
   };
 }
-
-// Export for use in other files
-module.exports.pageCache = pageCache;
