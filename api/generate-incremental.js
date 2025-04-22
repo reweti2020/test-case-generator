@@ -2,22 +2,6 @@
 const axios = require('axios');
 const cheerio = require('cheerio');
 
-// Try different paths to import testGen.js
-let testGenModule;
-try {
-  // Try relative to root
-  testGenModule = require('../testGen');
-} catch (e) {
-  try {
-    // Try relative to current directory
-    testGenModule = require('./testGen');
-  } catch (e) {
-    // Fallback to null if can't find it
-    console.error('Could not import testGen.js module:', e.message);
-    testGenModule = null;
-  }
-}
-
 // In-memory storage for page analysis results (Note: this will reset when serverless function cold starts)
 const pageCache = {};
 
@@ -66,32 +50,14 @@ module.exports = async (req, res) => {
     // Process the request based on mode
     let result;
     
-    // Use testGen.js if available, otherwise use local implementation
-    if (testGenModule && testGenModule.generateTestCases) {
-      console.log("Using testGen.js module for test generation");
-      
-      if (mode === 'first') {
-        result = await testGenModule.generateTestCases(url, {
-          mode: 'first',
-          userPlan: userPlan
-        });
-      } else {
-        result = await testGenModule.generateTestCases(url, {
-          mode: 'next',
-          sessionId: sessionId,
-          elementType: elementType,
-          elementIndex: parseInt(elementIndex, 10),
-          userPlan: userPlan
-        });
-      }
+    if (mode === 'first') {
+      result = await generateFirstTest(url, userPlan);
     } else {
-      console.log("Falling back to local implementation");
-      // Fall back to original implementation
-      if (mode === 'first') {
-        result = await generateFirstTest(url, userPlan);
-      } else {
-        result = generateNextTest(sessionId, elementType, elementIndex, userPlan);
-      }
+      // Debug to see if the session exists
+      console.log(`Looking for session: ${sessionId}`);
+      console.log(`Available sessions: ${Object.keys(pageCache).join(', ')}`);
+      
+      result = generateNextTest(sessionId, elementType, elementIndex, userPlan);
     }
     
     return res.status(200).json(result);
@@ -240,6 +206,10 @@ async function generateFirstTest(url, userPlan = 'pro') {
       },
       testCases: []
     };
+    
+    // Log the newly created session ID for debugging
+    console.log(`Created new session: ${newSessionId}`);
+    console.log(`Available sessions: ${Object.keys(pageCache).join(', ')}`);
         
     // Generate first test (always page verification)
     const firstTest = {
@@ -321,8 +291,6 @@ async function generateFirstTest(url, userPlan = 'pro') {
   }
 }
 
-// Include all the original helper functions
-
 /**
  * Generate the next test case from session data
  */
@@ -335,10 +303,7 @@ function generateNextTest(sessionId, elementType, elementIndex, userPlan = 'pro'
   }
   
   const session = pageCache[sessionId];
-  
-  // Disable free plan check during testing
-  const freeLimit = 9999; // Set very high limit
-  // Skipping the check to allow unlimited tests
+  console.log(`Session found. Current test count: ${session.testCases.length}`);
   
   // Get element collection based on type
   const elements = session.pageData[`${elementType}s`] || [];
@@ -353,18 +318,18 @@ function generateNextTest(sessionId, elementType, elementIndex, userPlan = 'pro'
   // Get the specific element
   const element = elements[elementIndex];
   
-  // Generate a test case based on element type
+  // Generate a test case based on element type with intelligent expectations
   let testCase;
   
   switch (elementType) {
     case 'button':
-      testCase = generateButtonTest(session.pageData, element, session.processed.buttons);
+      testCase = generateIntelligentButtonTest(session.pageData, element, session.processed.buttons);
       break;
     case 'form':
       testCase = generateFormTest(session.pageData, element, session.processed.forms);
       break;
     case 'link':
-      testCase = generateLinkTest(session.pageData, element, session.processed.links);
+      testCase = generateIntelligentLinkTest(session.pageData, element, session.processed.links);
       break;
     case 'input':
       testCase = generateInputTest(session.pageData, element, session.processed.inputs);
@@ -420,29 +385,25 @@ function generateNextTest(sessionId, elementType, elementIndex, userPlan = 'pro'
   };
 }
 
-// Helper functions to generate specific test cases
-function generateButtonTest(pageData, button, index) {
-  // Add intelligent expectation generation if testGen module isn't available
-  let expectedResult = 'Button responds to the click (page navigates or action occurs)';
+// Intelligent test generators with context-aware expectations
+
+/**
+ * Generate a button test with intelligent expectations
+ */
+function generateIntelligentButtonTest(pageData, button, index) {
+  // Ensure we have a valid button text
+  const buttonText = button.text || button.id || 'Unnamed Button';
+  const buttonIdentifier = button.text ? `with text "${button.text}"` : 
+                           button.id ? `with ID "${button.id}"` : 
+                           `#${index + 1}`;
   
-  // Basic inference implementation if testGen module isn't available
-  const buttonText = (button.text || '').toLowerCase();
-  if (buttonText.includes('search') || buttonText.includes('find')) {
-    expectedResult = 'Search results are displayed based on the search criteria';
-  } else if (buttonText.includes('login') || buttonText.includes('sign in')) {
-    expectedResult = 'User is logged in successfully or login form is displayed';
-  } else if (buttonText.includes('submit') || buttonText.includes('send')) {
-    expectedResult = 'Form is submitted and appropriate confirmation is displayed';
-  } else if (buttonText.includes('download')) {
-    expectedResult = 'File download begins or download options are presented';
-  } else if (buttonText.includes('menu') || buttonText.includes('nav')) {
-    expectedResult = 'Menu or navigation options are displayed';
-  }
+  // Generate specific expected result based on button text
+  let expectedResult = inferButtonExpectation(buttonText);
   
   return {
     id: `TC_BTN_${index + 1}`,
-    title: `Test Button: ${button.text || button.id || 'Unnamed Button'}`,
-    description: `Verify that the button works correctly`,
+    title: `Test Button: ${buttonText}`,
+    description: `Verify that the "${buttonText}" button works correctly`,
     priority: 'Medium',
     steps: [
       {
@@ -452,7 +413,7 @@ function generateButtonTest(pageData, button, index) {
       },
       {
         step: 2,
-        action: `Find button ${button.text ? `with text "${button.text}"` : button.id ? `with ID "${button.id}"` : index + 1}`,
+        action: `Find button ${buttonIdentifier}`,
         expected: 'Button is visible on the page'
       },
       {
@@ -464,6 +425,218 @@ function generateButtonTest(pageData, button, index) {
   };
 }
 
+/**
+ * Infer what should happen when a button is clicked based on its text
+ */
+function inferButtonExpectation(buttonText) {
+  buttonText = buttonText.toLowerCase();
+  
+  // Search/Filter buttons
+  if (buttonText.includes('search') || buttonText.includes('find')) {
+    return 'Search results are displayed based on the search criteria';
+  }
+  
+  // Navigation-related buttons
+  if (buttonText.includes('menu') || buttonText.includes('navigation')) {
+    return 'Menu or navigation options are displayed';
+  }
+  
+  // Comparison/Table buttons
+  if (buttonText.includes('compar') || buttonText.includes('table')) {
+    return 'Comparison table is displayed to the user';
+  }
+  
+  // Form submission buttons
+  if (buttonText.includes('submit') || buttonText.includes('send') || 
+      buttonText.includes('save') || buttonText.includes('apply')) {
+    return 'Form is submitted and appropriate confirmation is displayed';
+  }
+  
+  // Login/account buttons
+  if (buttonText.includes('login') || buttonText.includes('sign in')) {
+    return 'User is logged in successfully or login form is displayed';
+  }
+  if (buttonText.includes('register') || buttonText.includes('sign up')) {
+    return 'Registration form is displayed or user is registered successfully';
+  }
+  
+  // Download buttons
+  if (buttonText.includes('download')) {
+    return 'File download begins or download options are presented';
+  }
+  
+  // View/Show buttons
+  if (buttonText.includes('view') || buttonText.includes('show') || 
+      buttonText.includes('display') || buttonText.includes('open')) {
+    const contentType = extractContentType(buttonText);
+    return `${contentType} is displayed to the user`;
+  }
+  
+  // Close/Hide buttons
+  if (buttonText.includes('close') || buttonText.includes('hide') || 
+      buttonText.includes('cancel') || buttonText.includes('dismiss')) {
+    return 'The associated content is hidden or closed';
+  }
+  
+  // Add/Create buttons
+  if (buttonText.includes('add') || buttonText.includes('create') || 
+      buttonText.includes('new')) {
+    return 'New item creation form/option is displayed';
+  }
+  
+  // Default fallback
+  return 'Appropriate content or action occurs based on the button purpose';
+}
+
+/**
+ * Extract content type from button text
+ */
+function extractContentType(text) {
+  // Remove common action words
+  const cleanedText = text.replace(/(view|show|display|open|get|see)\s+/i, '');
+  
+  // Capitalize the first letter
+  return cleanedText.charAt(0).toUpperCase() + cleanedText.slice(1);
+}
+
+/**
+ * Generate a link test with intelligent expectations
+ */
+function generateIntelligentLinkTest(pageData, link, index) {
+  const linkText = link.text || link.href || 'Unnamed Link';
+  const linkIdentifier = link.text ? `with text "${link.text}"` : 
+                         link.id ? `with ID "${link.id}"` : 
+                         `#${index + 1}`;
+  
+  // Extract destination from href or text
+  let destination = inferLinkDestination(link.href, linkText);
+  
+  return {
+    id: `TC_LINK_${index + 1}`,
+    title: `Test Link: ${linkText}`,
+    description: `Verify that the link navigates to the correct destination`,
+    priority: 'Medium',
+    steps: [
+      {
+        step: 1,
+        action: `Navigate to ${pageData.url}`,
+        expected: 'Page loads successfully'
+      },
+      {
+        step: 2,
+        action: `Find link ${linkIdentifier}`,
+        expected: 'Link is visible on the page'
+      },
+      {
+        step: 3,
+        action: 'Click the link',
+        expected: destination
+      }
+    ]
+  };
+}
+
+/**
+ * Infer the destination page/action from link href and text
+ */
+function inferLinkDestination(href, linkText) {
+  // If no href, use generic expectation
+  if (!href) {
+    return inferFromLinkText(linkText);
+  }
+  
+  href = href.toLowerCase();
+  linkText = linkText.toLowerCase();
+  
+  // Check for anchor links (same page navigation)
+  if (href.startsWith('#')) {
+    const anchorName = href.substring(1);
+    return `Page scrolls to the "${anchorName}" section`;
+  }
+  
+  // Check for external links
+  if (href.startsWith('http')) {
+    let hostname = '';
+    try {
+      const url = new URL(href);
+      hostname = url.hostname;
+    } catch (e) {
+      // If URL parsing fails, just use the href
+      hostname = href;
+    }
+    return `User is navigated to external website: ${hostname}`;
+  }
+  
+  // Check for file downloads
+  if (href.includes('.pdf') || href.includes('.doc') || href.includes('.xls') || 
+      href.includes('.zip') || href.includes('.csv')) {
+    return `File download begins for the linked document`;
+  }
+  
+  // Check for mail links
+  if (href.startsWith('mailto:')) {
+    return `Email client opens with the specified email address`;
+  }
+  
+  // Check for phone links
+  if (href.startsWith('tel:')) {
+    return `Phone dialer opens with the specified phone number`;
+  }
+  
+  // Extract page name from href
+  let pageName = '';
+  try {
+    // Try to extract the last part of the path
+    const pathParts = href.split('/').filter(Boolean);
+    if (pathParts.length > 0) {
+      pageName = pathParts[pathParts.length - 1].replace(/\.\w+$/, ''); // Remove file extension
+      pageName = pageName.replace(/-|_/g, ' '); // Replace dashes/underscores with spaces
+    }
+  } catch (e) {
+    // If parsing fails, extract from the href string
+    const lastPart = href.split('/').pop();
+    if (lastPart) {
+      pageName = lastPart.replace(/\.\w+$/, '').replace(/-|_/g, ' ');
+    }
+  }
+  
+  // If we have a page name, use it
+  if (pageName) {
+    // Capitalize each word
+    pageName = pageName.split(' ')
+      .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+      .join(' ');
+    
+    return `User is navigated to the ${pageName} page`;
+  }
+  
+  // Fallback to link text analysis
+  return inferFromLinkText(linkText);
+}
+
+/**
+ * Infer destination from link text when href analysis fails
+ */
+function inferFromLinkText(linkText) {
+  linkText = linkText.toLowerCase();
+  
+  // Common page types
+  if (linkText.includes('home')) return 'User is navigated to the Home page';
+  if (linkText.includes('about')) return 'User is navigated to the About page';
+  if (linkText.includes('contact')) return 'User is navigated to the Contact page';
+  if (linkText.includes('pricing')) return 'User is navigated to the Pricing page';
+  if (linkText.includes('feature')) return 'User is navigated to the Features page';
+  if (linkText.includes('product')) return 'User is navigated to the Products page';
+  if (linkText.includes('service')) return 'User is navigated to the Services page';
+  if (linkText.includes('blog') || linkText.includes('news')) return 'User is navigated to the Blog/News page';
+  if (linkText.includes('login') || linkText.includes('sign in')) return 'User is navigated to the Login page';
+  if (linkText.includes('register') || linkText.includes('sign up')) return 'User is navigated to the Registration page';
+  
+  // If nothing specific, construct from the link text
+  return `User is navigated to the ${linkText} page/section`;
+}
+
+// Original test generators (kept for forms and inputs since they were already good)
 function generateFormTest(pageData, form, index) {
   return {
     id: `TC_FORM_${index + 1}`,
@@ -490,55 +663,6 @@ function generateFormTest(pageData, form, index) {
         step: 4,
         action: 'Submit the form',
         expected: 'Form submits without errors'
-      }
-    ]
-  };
-}
-
-function generateLinkTest(pageData, link, index) {
-  // Basic link destination inference
-  let expectedResult = `Link navigates to ${link.href || 'correct destination'}`;
-  
-  if (link.href) {
-    if (link.href.startsWith('#')) {
-      expectedResult = `Page scrolls to the "${link.href.substring(1)}" section`;
-    } else if (link.href.startsWith('mailto:')) {
-      expectedResult = 'Email client opens with the specified email address';
-    } else if (link.href.includes('.pdf') || link.href.includes('.doc') || link.href.includes('.xls')) {
-      expectedResult = 'File download begins for the linked document';
-    }
-  }
-  
-  // Link text based inference
-  const linkText = (link.text || '').toLowerCase();
-  if (linkText.includes('home')) {
-    expectedResult = 'User is navigated to the Home page';
-  } else if (linkText.includes('about')) {
-    expectedResult = 'User is navigated to the About page';
-  } else if (linkText.includes('contact')) {
-    expectedResult = 'User is navigated to the Contact page';
-  }
-  
-  return {
-    id: `TC_LINK_${index + 1}`,
-    title: `Test Link: ${link.text || link.href || 'Unnamed Link'}`,
-    description: `Verify that the link navigates to the correct destination`,
-    priority: 'Medium',
-    steps: [
-      {
-        step: 1,
-        action: `Navigate to ${pageData.url}`,
-        expected: 'Page loads successfully'
-      },
-      {
-        step: 2,
-        action: `Find link ${link.text ? `with text "${link.text}"` : link.id ? `with ID "${link.id}"` : index + 1}`,
-        expected: 'Link is visible on the page'
-      },
-      {
-        step: 3,
-        action: 'Click the link',
-        expected: expectedResult
       }
     ]
   };
@@ -575,5 +699,7 @@ function generateInputTest(pageData, input, index) {
   };
 }
 
+// Export pageCache for other modules if needed
+module.exports.pageCache = pageCache;
 // Export for use in other files
 module.exports.pageCache = pageCache;
