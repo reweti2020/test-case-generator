@@ -171,7 +171,8 @@ document.addEventListener('DOMContentLoaded', function() {
     try {
       // Add a client-side timeout
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 25000); // 25 second timeout
+     const timeoutDuration = 60000; // Increase timeout to 60 seconds
+     const timeoutId = setTimeout(() => controller.abort(), timeoutDuration); // Set timeout duration dynamically
       
       const response = await fetch('/api/generate-incremental', {
         method: 'POST',
