@@ -3,22 +3,29 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Payment Successful - Test Case Generator</title>
-  <link rel="stylesheet" href="css/styles.css">
+  <title>Payment Successful - Test Case Generator | VelocityQA</title>
+  <meta name="description" content="Thank you for upgrading to the Pro plan. Your subscription has been activated.">
+  
+  <!-- VelocityQA Branding Fonts -->
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  
+  <!-- Styles -->
+  <link rel="stylesheet" href="style.css">
   <style>
     .success-container {
       max-width: 800px;
       margin: 2rem auto;
       padding: 2rem;
-      background-color: white;
-      border-radius: 8px;
-      box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+      background-color: var(--card);
+      border-radius: var(--border-radius);
+      box-shadow: var(--box-shadow);
       text-align: center;
+      border: 1px solid var(--border);
     }
     
     .success-icon {
       font-size: 4rem;
-      color: #28a745;
+      color: var(--success);
       margin-bottom: 1rem;
     }
     
@@ -30,23 +37,47 @@
     }
     
     .feature-card {
-      background-color: #f8f9fa;
+      background-color: rgba(30, 41, 59, 0.5);
       padding: 1.5rem;
-      border-radius: 8px;
+      border-radius: var(--border-radius);
       text-align: center;
+      border: 1px solid var(--border);
+      transition: var(--transition);
+    }
+    
+    .feature-card:hover {
+      transform: translateY(-5px);
+      box-shadow: 0 10px 25px rgba(0, 0, 0, 0.1);
     }
     
     .feature-card h3 {
       margin-bottom: 0.5rem;
-      color: #4a6cf7;
+      color: var(--teal);
+      font-weight: 600;
+    }
+    
+    .feature-card p {
+      color: var(--text-light);
     }
   </style>
+  
+  <!-- Google Analytics -->
+  <script async src="https://www.googletagmanager.com/gtag/js?id=G-W0PBYFYX7Q"></script>
+  <script>
+    window.dataLayer = window.dataLayer || [];
+    function gtag(){dataLayer.push(arguments);}
+    gtag('js', new Date());
+    gtag('config', 'G-W0PBYFYX7Q');
+  </script>
 </head>
 <body>
+  <!-- Header -->
   <header>
-    <div class="header-content">
-      <h1>Test Case Generator</h1>
-      <p>Automatically generate test cases from any website</p>
+    <div class="container">
+      <div class="header-content">
+        <h1>Test Case Generator</h1>
+        <p>Automatically generate test cases from any website</p>
+      </div>
     </div>
   </header>
 
@@ -79,8 +110,11 @@
     </div>
   </main>
 
+  <!-- Footer -->
   <footer>
-    <p>&copy; 2025 Test Case Generator. All rights reserved.</p>
+    <div class="container">
+      <p>&copy; 2025 VelocityQA. All rights reserved.</p>
+    </div>
   </footer>
   
   <script>
