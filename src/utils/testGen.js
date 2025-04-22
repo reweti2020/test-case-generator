@@ -19,12 +19,14 @@ async function generateTestCases(url, options = {}) {
     elementType = 'button', 
     elementIndex = 0, 
     userPlan = 'free' 
+    batchSize = 5  // Add this parameter with a default value
   } = options;
+
   
   // For subsequent calls, use cached page data if available
   if (mode === 'next' && sessionId && pageCache[sessionId]) {
     try {
-      return generateNextTest(sessionId, elementType, elementIndex, userPlan);
+      return generateNextTest(sessionId, elementType, elementIndex, userPlan, batchSize);
     } catch (error) {
       console.error('Error generating next test:', error);
       return { 
@@ -217,7 +219,7 @@ function generateNextTest(sessionId, elementType, elementIndex, userPlan = 'free
   const session = pageCache[sessionId];
   
   // Check free plan limits
-  const freeLimit = 10;
+  const freeLimit = 100;
   if (userPlan === 'free' && session.testCases.length >= freeLimit) {
     return {
       success: false,
@@ -226,49 +228,142 @@ function generateNextTest(sessionId, elementType, elementIndex, userPlan = 'free
       totalTestCases: session.testCases.length
     };
   }
+
+    // Array to store newly generated test cases
+  const newTestCases = [];
   
-  // Get element collection based on type
-  const elements = session.pageData[`${elementType}s`] || [];
+  // Initialize tracking variables
+  let currentElementType = elementType;
+  let currentElementIndex = elementIndex;
+  let hasMoreElements = true;
   
-  if (elementIndex >= elements.length) {
-    return {
-      success: false,
-      error: 'Element index out of bounds'
-    };
+  // Generate up to batchSize test cases
+  for (let i = 0; i < batchSize; i++) {
+    // Stop if we've reached the free user limit
+    if (userPlan === 'free' && session.testCases.length + newTestCases.length >= freeLimit) {
+      hasMoreElements = false;
+      break;
+    }
+    
+    // Stop if there are no more elements to process
+    if (!currentElementType) {
+      hasMoreElements = false;
+      break;
+    }
+    
+    // Get element collection based on type
+    const elements = session.pageData[`${currentElementType}s`] || [];
+    
+    if (currentElementIndex >= elements.length) {
+      // Find next element type that has unprocessed elements
+      const types = ['button', 'form', 'link', 'input'];
+      let foundNext = false;
+      
+      for (const type of types) {
+        if (session.processed[`${type}s`] < session.pageData[`${type}s`].length) {
+          currentElementType = type;
+          currentElementIndex = session.processed[`${type}s`];
+          foundNext = true;
+          break;
+        }
+      }
+      
+      if (!foundNext) {
+        hasMoreElements = false;
+        break;
+      }
+    }
+    
+    // Get the specific element
+    const element = session.pageData[`${currentElementType}s`][currentElementIndex];
+    
+    // Generate a test case based on element type
+    let testCase;
+    switch (currentElementType) {
+      case 'button':
+        testCase = generateButtonTest(session.pageData, element, session.processed.buttons);
+        break;
+      case 'form':
+        testCase = generateFormTest(session.pageData, element, session.processed.forms);
+        break;
+      case 'link':
+        testCase = generateLinkTest(session.pageData, element, session.processed.links);
+        break;
+      case 'input':
+        testCase = generateInputTest(session.pageData, element, session.processed.inputs);
+        break;
+      default:
+        testCase = null;
+    }
+    
+    if (testCase) {
+      // Add the test case to our batch
+      newTestCases.push(testCase);
+      
+      // Update processed count
+      session.processed[`${currentElementType}s`]++;
+      
+      // Move to the next element
+      currentElementIndex++;
+      
+      // Check if we've reached the end of this element type
+      if (currentElementIndex >= session.pageData[`${currentElementType}s`].length) {
+        // Find next element type
+        const types = ['button', 'form', 'input', 'link'];
+        let foundNext = false;
+        
+        for (const type of types) {
+          if (session.processed[`${type}s`] < session.pageData[`${type}s`].length) {
+            currentElementType = type;
+            currentElementIndex = session.processed[`${type}s`];
+            foundNext = true;
+            break;
+          }
+        }
+        
+        if (!foundNext) {
+          hasMoreElements = false;
+          currentElementType = null;
+        }
+      }
+    } else {
+      // If we couldn't generate a test case, move to the next element
+      currentElementIndex++;
+      if (currentElementIndex >= session.pageData[`${currentElementType}s`].length) {
+        // Find next element type
+        const types = ['button', 'form', 'input', 'link'];
+        let foundNext = false;
+        
+        for (const type of types) {
+          if (session.processed[`${type}s`] < session.pageData[`${type}s`].length) {
+            currentElementType = type;
+            currentElementIndex = session.processed[`${type}s`];
+            foundNext = true;
+            break;
+          }
+        }
+        
+        if (!foundNext) {
+          hasMoreElements = false;
+          currentElementType = null;
+        }
+      }
+    }
   }
   
-  // Get the specific element
-  const element = elements[elementIndex];
+  // Add all new test cases to the session
+  session.testCases = session.testCases.concat(newTestCases);
   
-  // Generate a test case based on element type
-  let testCase;
-  
-  switch (elementType) {
-    case 'button':
-      testCase = generateButtonTest(session.pageData, element, session.processed.buttons);
-      break;
-    case 'form':
-      testCase = generateFormTest(session.pageData, element, session.processed.forms);
-      break;
-    case 'link':
-      testCase = generateLinkTest(session.pageData, element, session.processed.links);
-      break;
-    case 'input':
-      testCase = generateInputTest(session.pageData, element, session.processed.inputs);
-      break;
-    default:
-      testCase = null;
-  }
-  
-  if (!testCase) {
-    return {
-      success: false,
-      error: 'Failed to generate test case'
-    };
-  }
-  
-  // Add the test case to the cache
-  session.testCases.push(testCase);
+  return {
+    success: true,
+    testCases: newTestCases,
+    nextElementType: currentElementType,
+    nextElementIndex: currentElementIndex,
+    hasMoreElements,
+    totalTestCases: session.testCases.length,
+    upgradeRequired: userPlan === 'free' && session.testCases.length >= freeLimit
+  };
+}
   
   // Update processed count
   session.processed[`${elementType}s`]++;
