@@ -616,6 +616,101 @@ footer p {
   .download-buttons {
     justify-content: center;
   }
+
+  /* Test Case Correction UI */
+.correction-ui {
+  background: var(--card);
+  padding: 1.5rem;
+  border-radius: var(--border-radius);
+  border: 1px solid var(--border);
+  margin-top: 1rem;
+  box-shadow: var(--box-shadow);
+}
+
+.correction-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1rem;
+  padding-bottom: 0.5rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.correction-header h3 {
+  margin: 0;
+  color: var(--teal);
+}
+
+.close-button {
+  background: none;
+  border: none;
+  color: var(--text-light);
+  font-size: 1.5rem;
+  cursor: pointer;
+}
+
+.close-button:hover {
+  color: var(--text);
+}
+
+.form-group {
+  margin-bottom: 1rem;
+}
+
+.form-group label {
+  display: block;
+  margin-bottom: 0.5rem;
+}
+
+.edit-input {
+  width: 100%;
+  background-color: var(--bg-dark);
+  border: 1px solid var(--border);
+  border-radius: var(--border-radius);
+  padding: 0.5rem;
+  color: var(--text);
+}
+
+textarea.edit-input {
+  min-height: 80px;
+  resize: vertical;
+}
+
+.edit-step {
+  background-color: rgba(30, 41, 59, 0.5);
+  padding: 1rem;
+  border-radius: var(--border-radius);
+  margin-bottom: 1rem;
+  border-left: 3px solid var(--teal);
+}
+
+.step-number {
+  font-weight: bold;
+  color: var(--teal);
+  margin-bottom: 0.5rem;
+}
+
+.correction-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  margin-top: 1rem;
+}
+
+.edit-button {
+  background-color: transparent;
+  border: 1px solid var(--teal);
+  color: var(--teal);
+  padding: 0.25rem 0.5rem;
+  border-radius: var(--border-radius);
+  font-size: 0.8rem;
+  cursor: pointer;
+  transition: var(--transition);
+}
+
+.edit-button:hover {
+  background-color: rgba(32, 197, 198, 0.1);
+}
 }
 
 /* Success Banner */
