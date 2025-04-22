@@ -663,6 +663,13 @@ document.addEventListener('DOMContentLoaded', function() {
     stepsContainer.innerHTML = '';
     if (testCase.steps && testCase.steps.length > 0) {
       testCase.steps.forEach((step, index) => {
+        // Format the expected value for title verification
+        let expectedValue = step.expected || '';
+        if (step.action.includes('Verify page title') && expectedValue.startsWith('Title is "')) {
+          // Extract just the title part for editing
+          expectedValue = expectedValue.replace(/^Title is\s*"/, '').replace(/"$/, '');
+        }
+        
         const stepEl = document.createElement('div');
         stepEl.className = 'edit-step';
         stepEl.innerHTML = `
@@ -673,7 +680,7 @@ document.addEventListener('DOMContentLoaded', function() {
           </div>
           <div class="form-group">
             <label for="edit-step-expected-${index}">Expected Result:</label>
-            <input type="text" id="edit-step-expected-${index}" class="edit-input edit-step-expected" data-index="${index}" value="${step.expected || ''}">
+            <input type="text" id="edit-step-expected-${index}" class="edit-input edit-step-expected" data-index="${index}" value="${expectedValue}">
           </div>
         `;
         stepsContainer.appendChild(stepEl);
@@ -705,34 +712,34 @@ document.addEventListener('DOMContentLoaded', function() {
     currentEditingTestCase.title = titleInput.value;
     currentEditingTestCase.description = descriptionInput.value;
     
- // Update steps
-if (currentEditingTestCase.steps && currentEditingTestCase.steps.length > 0) {
-  actionInputs.forEach(input => {
-    const index = parseInt(input.getAttribute('data-index'));
-    if (currentEditingTestCase.steps[index]) {
-      currentEditingTestCase.steps[index].action = input.value;
-    }
-  });
-  
-  expectedInputs.forEach(input => {
-    const index = parseInt(input.getAttribute('data-index'));
-    if (currentEditingTestCase.steps[index]) {
-      const expectedValue = input.value;
-      
-      // Special handling for title verification steps
-      if (currentEditingTestCase.steps[index].action.includes('Verify page title')) {
-        // Make sure the format is "Title is 'whatever'"
-        if (!expectedValue.startsWith('Title is "')) {
-          currentEditingTestCase.steps[index].expected = `Title is "${expectedValue.replace(/^Title is\s*"?/i, '').replace(/"$/g, '')}"`;
-        } else {
-          currentEditingTestCase.steps[index].expected = expectedValue;
+    // Update steps
+    if (currentEditingTestCase.steps && currentEditingTestCase.steps.length > 0) {
+      actionInputs.forEach(input => {
+        const index = parseInt(input.getAttribute('data-index'));
+        if (currentEditingTestCase.steps[index]) {
+          currentEditingTestCase.steps[index].action = input.value;
         }
-      } else {
-        currentEditingTestCase.steps[index].expected = expectedValue;
-      }
+      });
+      
+      expectedInputs.forEach(input => {
+        const index = parseInt(input.getAttribute('data-index'));
+        if (currentEditingTestCase.steps[index]) {
+          const expectedValue = input.value;
+          
+          // Special handling for title verification steps
+          if (currentEditingTestCase.steps[index].action.includes('Verify page title')) {
+            // Make sure the format is "Title is 'whatever'"
+            if (!expectedValue.startsWith('Title is "')) {
+              currentEditingTestCase.steps[index].expected = `Title is "${expectedValue.replace(/^Title is\s*"?/i, '').replace(/"$/g, '')}"`;
+            } else {
+              currentEditingTestCase.steps[index].expected = expectedValue;
+            }
+          } else {
+            currentEditingTestCase.steps[index].expected = expectedValue;
+          }
+        }
+      });
     }
-  });
-}
     
     // Re-render test cases
     renderTestCases(state.testCases);
@@ -1081,6 +1088,31 @@ const promoBannerStyles = `
 .promo-small {
   font-size: 0.85rem;
   color: var(--text-light);
+}
+
+/* Edit button styling */
+.test-case-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.edit-button {
+  background-color: #1e293b; /* Darker background */
+  border: 1px solid var(--teal);
+  color: var(--teal);
+  padding: 0.3rem 0.7rem;
+  border-radius: var(--border-radius);
+  font-size: 0.8rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: var(--transition);
+  margin-right: 0.75rem;
+}
+
+.edit-button:hover {
+  background-color: var(--teal);
+  color: white;
 }
 `;
 
