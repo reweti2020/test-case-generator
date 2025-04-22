@@ -307,12 +307,21 @@ function generateNextTest(sessionId, elementType, elementIndex, userPlan = 'free
   };
 }
 
-// Helper functions to generate specific test cases
+// Enhanced button test generation with intelligent expectations
 function generateButtonTest(pageData, button, index) {
+  // Ensure we have a valid button text
+  const buttonText = button.text || button.id || 'Unnamed Button';
+  const buttonIdentifier = button.text ? `with text "${button.text}"` : 
+                           button.id ? `with ID "${button.id}"` : 
+                           `#${index + 1}`;
+  
+  // Generate specific expected result based on button text
+  let expectedResult = inferButtonExpectation(buttonText);
+  
   return {
     id: `TC_BTN_${index + 1}`,
-    title: `Test Button: ${button.text || button.id || 'Unnamed Button'}`,
-    description: `Verify that the button works correctly`,
+    title: `Test Button: ${buttonText}`,
+    description: `Verify that the "${buttonText}" button works correctly`,
     priority: 'Medium',
     steps: [
       {
@@ -322,16 +331,94 @@ function generateButtonTest(pageData, button, index) {
       },
       {
         step: 2,
-        action: `Find button ${button.text ? `with text "${button.text}"` : button.id ? `with ID "${button.id}"` : index + 1}`,
+        action: `Find button ${buttonIdentifier}`,
         expected: 'Button is visible on the page'
       },
       {
         step: 3,
         action: 'Click the button',
-        expected: 'Button responds to the click (page navigates or action occurs)'
+        expected: expectedResult
       }
     ]
   };
+}
+
+/**
+ * Infer what should happen when a button is clicked based on its text
+ * @param {String} buttonText - The text of the button
+ * @returns {String} - Expected result after clicking the button
+ */
+function inferButtonExpectation(buttonText) {
+  buttonText = buttonText.toLowerCase();
+  
+  // Search/Filter buttons
+  if (buttonText.includes('search') || buttonText.includes('find')) {
+    return 'Search results are displayed based on the search criteria';
+  }
+  
+  // Navigation-related buttons
+  if (buttonText.includes('menu') || buttonText.includes('navigation')) {
+    return 'Menu or navigation options are displayed';
+  }
+  
+  // Comparison/Table buttons
+  if (buttonText.includes('compar') || buttonText.includes('table')) {
+    return 'Comparison table is displayed to the user';
+  }
+  
+  // Form submission buttons
+  if (buttonText.includes('submit') || buttonText.includes('send') || 
+      buttonText.includes('save') || buttonText.includes('apply')) {
+    return 'Form is submitted and appropriate confirmation is displayed';
+  }
+  
+  // Login/account buttons
+  if (buttonText.includes('login') || buttonText.includes('sign in')) {
+    return 'User is logged in successfully or login form is displayed';
+  }
+  if (buttonText.includes('register') || buttonText.includes('sign up')) {
+    return 'Registration form is displayed or user is registered successfully';
+  }
+  
+  // Download buttons
+  if (buttonText.includes('download')) {
+    return 'File download begins or download options are presented';
+  }
+  
+  // View/Show buttons
+  if (buttonText.includes('view') || buttonText.includes('show') || 
+      buttonText.includes('display') || buttonText.includes('open')) {
+    const contentType = extractContentType(buttonText);
+    return `${contentType} is displayed to the user`;
+  }
+  
+  // Close/Hide buttons
+  if (buttonText.includes('close') || buttonText.includes('hide') || 
+      buttonText.includes('cancel') || buttonText.includes('dismiss')) {
+    return 'The associated content is hidden or closed';
+  }
+  
+  // Add/Create buttons
+  if (buttonText.includes('add') || buttonText.includes('create') || 
+      buttonText.includes('new')) {
+    return 'New item creation form/option is displayed';
+  }
+  
+  // Default fallback
+  return 'Appropriate content or action occurs based on the button purpose';
+}
+
+/**
+ * Extract content type from button text
+ * @param {String} text - Button text
+ * @returns {String} - Content type
+ */
+function extractContentType(text) {
+  // Remove common action words
+  const cleanedText = text.replace(/(view|show|display|open|get|see)\s+/i, '');
+  
+  // Capitalize the first letter
+  return cleanedText.charAt(0).toUpperCase() + cleanedText.slice(1);
 }
 
 function generateFormTest(pageData, form, index) {
@@ -365,10 +452,21 @@ function generateFormTest(pageData, form, index) {
   };
 }
 
+/**
+ * Enhanced link test generation with intelligent expectations
+ */
 function generateLinkTest(pageData, link, index) {
+  const linkText = link.text || link.href || 'Unnamed Link';
+  const linkIdentifier = link.text ? `with text "${link.text}"` : 
+                         link.id ? `with ID "${link.id}"` : 
+                         `#${index + 1}`;
+  
+  // Extract destination from href or text
+  let destination = inferLinkDestination(link.href, linkText);
+  
   return {
     id: `TC_LINK_${index + 1}`,
-    title: `Test Link: ${link.text || link.href || 'Unnamed Link'}`,
+    title: `Test Link: ${linkText}`,
     description: `Verify that the link navigates to the correct destination`,
     priority: 'Medium',
     steps: [
@@ -379,16 +477,121 @@ function generateLinkTest(pageData, link, index) {
       },
       {
         step: 2,
-        action: `Find link ${link.text ? `with text "${link.text}"` : link.id ? `with ID "${link.id}"` : index + 1}`,
+        action: `Find link ${linkIdentifier}`,
         expected: 'Link is visible on the page'
       },
       {
         step: 3,
         action: 'Click the link',
-        expected: `Link navigates to ${link.href || 'correct destination'}`
+        expected: destination
       }
     ]
   };
+}
+
+/**
+ * Infer the destination page/action from link href and text
+ * @param {String} href - Link href attribute
+ * @param {String} linkText - Link text content
+ * @returns {String} - Expected destination
+ */
+function inferLinkDestination(href, linkText) {
+  // If no href, use generic expectation
+  if (!href) {
+    return inferFromLinkText(linkText);
+  }
+  
+  href = href.toLowerCase();
+  linkText = linkText.toLowerCase();
+  
+  // Check for anchor links (same page navigation)
+  if (href.startsWith('#')) {
+    const anchorName = href.substring(1);
+    return `Page scrolls to the "${anchorName}" section`;
+  }
+  
+  // Check for external links
+  if (href.startsWith('http') && !href.includes(global.location?.hostname || '')) {
+    let hostname = '';
+    try {
+      hostname = new URL(href).hostname;
+    } catch (e) {
+      // If URL parsing fails, just use the href
+      hostname = href;
+    }
+    return `User is navigated to external website: ${hostname}`;
+  }
+  
+  // Check for file downloads
+  if (href.includes('.pdf') || href.includes('.doc') || href.includes('.xls') || 
+      href.includes('.zip') || href.includes('.csv')) {
+    return `File download begins for the linked document`;
+  }
+  
+  // Check for mail links
+  if (href.startsWith('mailto:')) {
+    return `Email client opens with the specified email address`;
+  }
+  
+  // Check for phone links
+  if (href.startsWith('tel:')) {
+    return `Phone dialer opens with the specified phone number`;
+  }
+  
+  // Extract page name from href
+  let pageName = '';
+  try {
+    // Try to extract the last part of the path
+    const url = new URL(href);
+    const pathParts = url.pathname.split('/').filter(Boolean);
+    if (pathParts.length > 0) {
+      pageName = pathParts[pathParts.length - 1].replace(/\.\w+$/, ''); // Remove file extension
+      pageName = pageName.replace(/-|_/g, ' '); // Replace dashes/underscores with spaces
+    }
+  } catch (e) {
+    // If parsing fails, extract from the href string
+    const lastPart = href.split('/').pop();
+    if (lastPart) {
+      pageName = lastPart.replace(/\.\w+$/, '').replace(/-|_/g, ' ');
+    }
+  }
+  
+  // If we have a page name, use it
+  if (pageName) {
+    // Capitalize each word
+    pageName = pageName.split(' ')
+      .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+      .join(' ');
+    
+    return `User is navigated to the ${pageName} page`;
+  }
+  
+  // Fallback to link text analysis
+  return inferFromLinkText(linkText);
+}
+
+/**
+ * Infer destination from link text when href analysis fails
+ * @param {String} linkText - The text of the link
+ * @returns {String} - Expected destination
+ */
+function inferFromLinkText(linkText) {
+  linkText = linkText.toLowerCase();
+  
+  // Common page types
+  if (linkText.includes('home')) return 'User is navigated to the Home page';
+  if (linkText.includes('about')) return 'User is navigated to the About page';
+  if (linkText.includes('contact')) return 'User is navigated to the Contact page';
+  if (linkText.includes('pricing')) return 'User is navigated to the Pricing page';
+  if (linkText.includes('feature')) return 'User is navigated to the Features page';
+  if (linkText.includes('product')) return 'User is navigated to the Products page';
+  if (linkText.includes('service')) return 'User is navigated to the Services page';
+  if (linkText.includes('blog') || linkText.includes('news')) return 'User is navigated to the Blog/News page';
+  if (linkText.includes('login') || linkText.includes('sign in')) return 'User is navigated to the Login page';
+  if (linkText.includes('register') || linkText.includes('sign up')) return 'User is navigated to the Registration page';
+  
+  // If nothing specific, construct from the link text
+  return `User is navigated to the ${linkText} page/section`;
 }
 
 function generateInputTest(pageData, input, index) {
