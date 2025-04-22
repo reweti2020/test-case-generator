@@ -2,8 +2,7 @@
 const axios = require('axios');
 const cheerio = require('cheerio');
 
-// In-memory storage for page analysis results (consider moving to a database for production)
-// Note: This will be reset when the serverless function goes cold
+// In-memory storage for page analysis results
 const pageCache = {};
 
 /**
@@ -18,10 +17,9 @@ async function generateTestCases(url, options = {}) {
     sessionId = null, 
     elementType = 'button', 
     elementIndex = 0, 
-    userPlan = 'free' 
-    batchSize = 5  // Add this parameter with a default value
+    userPlan = 'free',  // Fixed missing comma here
+    batchSize = 5       // Added batchSize parameter with default value
   } = options;
-
   
   // For subsequent calls, use cached page data if available
   if (mode === 'next' && sessionId && pageCache[sessionId]) {
@@ -36,7 +34,7 @@ async function generateTestCases(url, options = {}) {
     }
   }
   
-  // For first call, analyze the page
+  // First-time call logic (analyzing website)
   try {
     console.log(`Fetching URL: ${url}`);
     
@@ -60,11 +58,11 @@ async function generateTestCases(url, options = {}) {
     
     console.log('URL fetched successfully, parsing HTML...');
     
-  // Load HTML into cheerio with decodeEntities option to handle character encoding issues
-const $ = cheerio.load(response.data, {
-  decodeEntities: true,
-  normalizeWhitespace: false
-});
+    // Load HTML into cheerio with decodeEntities option to handle character encoding issues
+    const $ = cheerio.load(response.data, {
+      decodeEntities: true,
+      normalizeWhitespace: false
+    });
     
     // Extract basic page data
     const pageData = {
@@ -201,14 +199,15 @@ const $ = cheerio.load(response.data, {
 }
 
 /**
- * Function to generate the next test from cached page data
+ * Function to generate the next batch of tests from cached page data
  * @param {string} sessionId - Session ID
  * @param {string} elementType - Type of element to test
  * @param {number} elementIndex - Index of element to test
  * @param {string} userPlan - User's subscription plan
- * @returns {object} - Generated test case and session info
+ * @param {number} batchSize - Number of test cases to generate
+ * @returns {object} - Generated test cases and session info
  */
-function generateNextTest(sessionId, elementType, elementIndex, userPlan = 'free') {
+function generateNextTest(sessionId, elementType, elementIndex, userPlan = 'free', batchSize = 5) {
   if (!sessionId || !pageCache[sessionId]) {
     return {
       success: false,
@@ -219,7 +218,7 @@ function generateNextTest(sessionId, elementType, elementIndex, userPlan = 'free
   const session = pageCache[sessionId];
   
   // Check free plan limits
-  const freeLimit = 100;
+  const freeLimit = 10; // Set to 10 to match frontend limit
   if (userPlan === 'free' && session.testCases.length >= freeLimit) {
     return {
       success: false,
@@ -228,8 +227,8 @@ function generateNextTest(sessionId, elementType, elementIndex, userPlan = 'free
       totalTestCases: session.testCases.length
     };
   }
-
-    // Array to store newly generated test cases
+  
+  // Array to store newly generated test cases
   const newTestCases = [];
   
   // Initialize tracking variables
@@ -354,48 +353,12 @@ function generateNextTest(sessionId, elementType, elementIndex, userPlan = 'free
   // Add all new test cases to the session
   session.testCases = session.testCases.concat(newTestCases);
   
+  // Return the batch of new test cases and updated state
   return {
     success: true,
     testCases: newTestCases,
     nextElementType: currentElementType,
     nextElementIndex: currentElementIndex,
-    hasMoreElements,
-    totalTestCases: session.testCases.length,
-    upgradeRequired: userPlan === 'free' && session.testCases.length >= freeLimit
-  };
-}
-  
-  // Update processed count
-  session.processed[`${elementType}s`]++;
-  
-  // Find next element type to process
-  let nextElementType = null;
-  let nextElementIndex = 0;
-  
-  // First try the current element type
-  if (session.processed[`${elementType}s`] < session.pageData[`${elementType}s`].length) {
-    nextElementType = elementType;
-    nextElementIndex = session.processed[`${elementType}s`];
-  } else {
-    // Try other element types
-    const types = ['button', 'form', 'input', 'link'];
-    for (const type of types) {
-      if (session.processed[`${type}s`] < session.pageData[`${type}s`].length) {
-        nextElementType = type;
-        nextElementIndex = session.processed[`${type}s`];
-        break;
-      }
-    }
-  }
-  
-  // Check if there are more elements to process
-  const hasMoreElements = (userPlan !== 'free' || session.testCases.length < freeLimit) && nextElementType !== null;
-  
-  return {
-    success: true,
-    testCases: [testCase],
-    nextElementType,
-    nextElementIndex,
     hasMoreElements,
     totalTestCases: session.testCases.length,
     upgradeRequired: userPlan === 'free' && session.testCases.length >= freeLimit
