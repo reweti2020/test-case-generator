@@ -1,6 +1,11 @@
 // api/generate-incremental.js
 const axios = require('axios');
 const cheerio = require('cheerio');
+const { generateTestCases } = require('../testGen');
+
+// In-memory cache for session data - this will be reset on serverless function cold starts
+// For production, consider using a database or cache service like Redis
+const pageCache = {};
 
 /**
  * API handler for test case generation
@@ -21,7 +26,14 @@ module.exports = async (req, res) => {
   
   try {
     // Extract request body
-    const { url, mode, pageData, processed, elementType, elementIndex, format } = req.body || {};
+    const body = req.body || {};
+    const url = body.url;
+    const mode = body.mode || 'first';
+    const format = body.format || 'plain';
+    const elementType = body.elementType;
+    const elementIndex = body.elementIndex ? parseInt(body.elementIndex) : 0;
+    // Default batchSize to 5 if not provided
+    const batchSize = body.batchSize ? parseInt(body.batchSize) : 5;
     
     // Log request for debugging
     console.log(`Request params: mode=${mode}, elementType=${elementType}, elementIndex=${elementIndex}, batchSize=${batchSize}`);
@@ -34,7 +46,8 @@ module.exports = async (req, res) => {
       });
     }
     
-    if (mode === 'next' && (!pageData || !processed)) {
+    // For subsequent calls, we need pageData and processed state
+    if (mode === 'next' && (!body.pageData || !body.processed)) {
       return res.status(400).json({
         success: false,
         error: 'Page data and processed state are required for subsequent test generation'
@@ -48,11 +61,31 @@ module.exports = async (req, res) => {
     let result;
     
     if (mode === 'first') {
-      result = await generateFirstTest(url, userPlan);
+      // For first call, generate initial test
+      result = await generateTestCases(url, {
+        mode: 'first',
+        userPlan: userPlan
+      });
     } else {
-      result = generateNextTest(pageData, processed, elementType, elementIndex, userPlan, batchSize);
+      // For subsequent calls, generate next batch of tests
+      // Extract data from request body
+      const pageData = body.pageData;
+      const processed = body.processed;
+      
+      // Call testGen with the batch parameters
+      result = await generateTestCases(null, {
+        mode: 'next',
+        sessionId: body.sessionId, // Make sure this is passed if using sessionId approach
+        pageData: pageData,
+        processed: processed,
+        elementType: elementType,
+        elementIndex: elementIndex,
+        userPlan: userPlan,
+        batchSize: batchSize
+      });
     }
     
+    // Return the result to the client
     return res.status(200).json(result);
   } catch (error) {
     console.error('Error in generate-incremental:', error);
@@ -65,6 +98,7 @@ module.exports = async (req, res) => {
 
 /**
  * Generate the first test case by analyzing the website
+ * This function is a backup in case testGen.js has issues
  */
 async function generateFirstTest(url, userPlan = 'pro') {
   try {
@@ -111,6 +145,7 @@ async function generateFirstTest(url, userPlan = 'pro') {
       extractedAt: new Date().toISOString()
     };
         
+    // Extract buttons
     pageData.buttons = [];
     $('button, input[type="submit"], input[type="button"], .btn, [role="button"], a.button, a.btn').slice(0, 20).each((i, el) => {
       const $el = $(el);
@@ -132,9 +167,6 @@ async function generateFirstTest(url, userPlan = 'pro') {
       if (!buttonText) {
         buttonText = $el.attr('aria-label') || 'Unnamed Button';
       }
-      
-      // Debug log the extracted button
-      console.log(`Button ${i+1}:`, buttonText);
       
       pageData.buttons.push({
         text: buttonText,
@@ -267,108 +299,166 @@ async function generateFirstTest(url, userPlan = 'pro') {
 }
 
 /**
- * Generate the next test case using client-provided data
+ * Function to generate the next batch of tests
+ * This is a fallback in case testGen.js has issues
  */
-f/* Collapsible Test Cases */
-.test-case {
-  border: 1px solid var(--border);
-  border-radius: var(--border-radius);
-  margin-bottom: 0.75rem;
-  background-color: rgba(30, 41, 59, 0.5);
-  transition: var(--transition);
+function generateNextTest(pageData, processed, elementType, elementIndex, userPlan = 'pro', batchSize = 5) {
+  if (!pageData || !processed) {
+    return {
+      success: false,
+      error: 'Missing page data or processing state'
+    };
+  }
+  
+  console.log(`Generating ${batchSize} tests starting from ${elementType} #${elementIndex}`);
+  
+  // Array to store newly generated test cases
+  const newTestCases = [];
+  
+  // Initialize tracking variables
+  let currentElementType = elementType;
+  let currentElementIndex = elementIndex;
+  let hasMoreElements = true;
+  
+  // Generate up to batchSize test cases
+  for (let i = 0; i < batchSize; i++) {
+    // Stop if there are no more elements to process
+    if (!currentElementType) {
+      hasMoreElements = false;
+      break;
+    }
+    
+    // Get element collection based on type
+    const elements = pageData[`${currentElementType}s`] || [];
+    
+    // Check if index is valid
+    if (currentElementIndex >= elements.length) {
+      // Try next element type
+      const types = ['button', 'form', 'input', 'link'];
+      let foundNext = false;
+      
+      for (const type of types) {
+        if (processed[`${type}s`] < pageData[`${type}s`].length) {
+          currentElementType = type;
+          currentElementIndex = processed[`${type}s`];
+          foundNext = true;
+          break;
+        }
+      }
+      
+      if (!foundNext) {
+        hasMoreElements = false;
+        break;
+      }
+    }
+    
+    try {
+      // Get the specific element
+      const element = pageData[`${currentElementType}s`][currentElementIndex];
+      
+      // Generate a test case based on element type
+      let testCase;
+      switch (currentElementType) {
+        case 'button':
+          testCase = generateButtonTest(pageData, element, processed.buttons);
+          break;
+        case 'form':
+          testCase = generateFormTest(pageData, element, processed.forms);
+          break;
+        case 'link':
+          testCase = generateLinkTest(pageData, element, processed.links);
+          break;
+        case 'input':
+          testCase = generateInputTest(pageData, element, processed.inputs);
+          break;
+        default:
+          testCase = null;
+      }
+      
+      if (testCase) {
+        // Add the test case to our batch
+        newTestCases.push(testCase);
+        
+        // Update processed count
+        processed[`${currentElementType}s`]++;
+        
+        // Move to the next element
+        currentElementIndex++;
+        
+        // Check if we've reached the end of this element type
+        if (currentElementIndex >= pageData[`${currentElementType}s`].length) {
+          // Find next element type
+          const types = ['button', 'form', 'input', 'link'];
+          let foundNext = false;
+          
+          for (const type of types) {
+            if (processed[`${type}s`] < pageData[`${type}s`].length) {
+              currentElementType = type;
+              currentElementIndex = processed[`${type}s`];
+              foundNext = true;
+              break;
+            }
+          }
+          
+          if (!foundNext) {
+            hasMoreElements = false;
+            currentElementType = null;
+          }
+        }
+      } else {
+        // If we couldn't generate a test case, move to the next element
+        currentElementIndex++;
+        if (currentElementIndex >= pageData[`${currentElementType}s`].length) {
+          // Find next element type
+          const types = ['button', 'form', 'input', 'link'];
+          let foundNext = false;
+          
+          for (const type of types) {
+            if (processed[`${type}s`] < pageData[`${type}s`].length) {
+              currentElementType = type;
+              currentElementIndex = processed[`${type}s`];
+              foundNext = true;
+              break;
+            }
+          }
+          
+          if (!foundNext) {
+            hasMoreElements = false;
+            currentElementType = null;
+          }
+        }
+      }
+    } catch (error) {
+      console.error(`Error processing ${currentElementType} element:`, error);
+      // Skip this element and try the next one
+      currentElementIndex++;
+    }
+  }
+  
+  console.log(`Generated ${newTestCases.length} test cases`);
+  
+  // Return the batch of new test cases and updated state
+  return {
+    success: true,
+    pageData: pageData,
+    processed: processed,
+    testCases: newTestCases,
+    nextElementType: currentElementType,
+    nextElementIndex: currentElementIndex,
+    hasMoreElements,
+    totalTestCases: processed.buttons + processed.forms + processed.links + processed.inputs + 1, // +1 for page test
+    upgradeRequired: false
+  };
 }
 
-.test-case-title-bar {
-  display: flex;
-  align-items: center;
-  cursor: pointer;
-  padding: 0.5rem;
-  flex-grow: 1;
-}
+// Helper test generation functions
+// These are backup implementations in case testGen.js has issues
 
-.test-case-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-
-.expand-icon {
-  margin-right: 0.5rem;
-  font-size: 0.8rem;
-  color: var(--teal);
-}
-
-.test-case.expanded {
-  border-color: var(--teal);
-}
-
-.test-case-content {
-  padding: 0 1rem 1rem 1rem;
-  border-top: 1px solid var(--border);
-}
-
-/* Progress Bar */
-.progress-info {
-  margin: 0.5rem 0;
-}
-
-.progress-text {
-  font-size: 0.85rem;
-  color: var(--text-light);
-  margin-bottom: 0.25rem;
-}
-
-.progress-bar {
-  height: 6px;
-  background-color: rgba(30, 41, 59, 0.5);
-  border-radius: 3px;
-  overflow: hidden;
-  width: 100%;
-}
-
-.progress-fill {
-  height: 100%;
-  background-color: var(--teal);
-  transition: width 0.3s ease;
-}
-
-/**
- * Generate a button test with intelligent expectations
- */
 function generateButtonTest(pageData, button, index) {
-  // Ensure we have a valid button text
   const buttonText = button.text || button.id || 'Unnamed Button';
   const buttonIdentifier = button.text ? `with text "${button.text}"` : 
                          button.id ? `with ID "${button.id}"` : 
                          `#${index + 1}`;
-  
-  // Generate specific expected result based on button text
-  let expectedResult = 'Button responds to the click (page navigates or action occurs)';
-  
-  // Simple inference implementation
-  const lowerButtonText = buttonText.toLowerCase();
-  if (lowerButtonText.includes('search') || lowerButtonText.includes('find')) {
-    expectedResult = 'Search results are displayed based on the search criteria';
-  } else if (lowerButtonText.includes('login') || lowerButtonText.includes('sign in')) {
-    expectedResult = 'User is logged in successfully or login form is displayed';
-  } else if (lowerButtonText.includes('register') || lowerButtonText.includes('sign up')) {
-    expectedResult = 'Registration form is displayed or user is registered';
-  } else if (lowerButtonText.includes('submit') || lowerButtonText.includes('send') || 
-             lowerButtonText.includes('save') || lowerButtonText.includes('apply')) {
-    expectedResult = 'Form is submitted and appropriate confirmation is displayed';
-  } else if (lowerButtonText.includes('download')) {
-    expectedResult = 'File download begins or download options are presented';
-  } else if (lowerButtonText.includes('menu') || lowerButtonText.includes('navigation')) {
-    expectedResult = 'Menu or navigation options are displayed';
-  } else if (lowerButtonText.includes('compar') || lowerButtonText.includes('table')) {
-    expectedResult = 'Comparison table is displayed to the user';
-  } else if (lowerButtonText.includes('close') || lowerButtonText.includes('hide') || 
-             lowerButtonText.includes('cancel') || lowerButtonText.includes('dismiss')) {
-    expectedResult = 'The associated content is hidden or closed';
-  } else if (lowerButtonText.includes('add') || lowerButtonText.includes('create') || 
-             lowerButtonText.includes('new')) {
-    expectedResult = 'New item creation form/option is displayed';
-  }
   
   return {
     id: `TC_BTN_${index + 1}`,
@@ -389,15 +479,12 @@ function generateButtonTest(pageData, button, index) {
       {
         step: 3,
         action: 'Click the button',
-        expected: expectedResult
+        expected: 'Button responds to the click (page navigates or action occurs)'
       }
     ]
   };
 }
 
-/**
- * Generate a form test
- */
 function generateFormTest(pageData, form, index) {
   return {
     id: `TC_FORM_${index + 1}`,
@@ -429,58 +516,11 @@ function generateFormTest(pageData, form, index) {
   };
 }
 
-/**
- * Generate a link test with intelligent expectations
- */
 function generateLinkTest(pageData, link, index) {
   const linkText = link.text || link.href || 'Unnamed Link';
   const linkIdentifier = link.text ? `with text "${link.text}"` : 
                        link.id ? `with ID "${link.id}"` : 
                        `#${index + 1}`;
-  
-  // Generate specific expected result
-  let expectedResult = `Link navigates to the correct destination`;
-  
-  // Simple inference based on href and text
-  const lowerHref = (link.href || '').toLowerCase();
-  const lowerText = linkText.toLowerCase();
-  
-  if (lowerHref.startsWith('#')) {
-    const anchorName = link.href.substring(1);
-    expectedResult = `Page scrolls to the "${anchorName}" section`;
-  } else if (lowerHref.startsWith('mailto:')) {
-    expectedResult = 'Email client opens with the specified email address';
-  } else if (lowerHref.startsWith('tel:')) {
-    expectedResult = 'Phone dialer opens with the specified phone number';
-  } else if (lowerHref.includes('.pdf') || lowerHref.includes('.doc') || 
-             lowerHref.includes('.xls') || lowerHref.includes('.zip')) {
-    expectedResult = 'File download begins for the linked document';
-  } else if (lowerText.includes('home')) {
-    expectedResult = 'User is navigated to the Home page';
-  } else if (lowerText.includes('about')) {
-    expectedResult = 'User is navigated to the About page';
-  } else if (lowerText.includes('contact')) {
-    expectedResult = 'User is navigated to the Contact page';
-  } else if (lowerText.includes('login') || lowerText.includes('sign in')) {
-    expectedResult = 'User is navigated to the Login page';
-  } else if (lowerText.includes('register') || lowerText.includes('sign up')) {
-    expectedResult = 'User is navigated to the Registration page';
-  } else if (lowerText.includes('pricing')) {
-    expectedResult = 'User is navigated to the Pricing page';
-  } else if (lowerText.includes('blog') || lowerText.includes('news')) {
-    expectedResult = 'User is navigated to the Blog/News page';
-  } else if (lowerHref.length > 0 && !lowerHref.startsWith('#')) {
-    try {
-      // Try to extract a descriptive part from the URL
-      const urlParts = lowerHref.replace(/https?:\/\//, '').split('/');
-      const lastPart = urlParts[urlParts.length - 1].replace(/\..*$/, '').replace(/[-_]/g, ' ');
-      if (lastPart && lastPart.length > 0 && lastPart !== '/' && lastPart !== '') {
-        expectedResult = `User is navigated to the ${lastPart.charAt(0).toUpperCase() + lastPart.slice(1)} page`;
-      }
-    } catch (e) {
-      // If URL parsing fails, use default
-    }
-  }
   
   return {
     id: `TC_LINK_${index + 1}`,
@@ -501,15 +541,12 @@ function generateLinkTest(pageData, link, index) {
       {
         step: 3,
         action: 'Click the link',
-        expected: expectedResult
+        expected: 'Link navigates to the correct destination'
       }
     ]
   };
 }
 
-/**
- * Generate an input field test
- */
 function generateInputTest(pageData, input, index) {
   return {
     id: `TC_INPUT_${index + 1}`,
@@ -540,3 +577,6 @@ function generateInputTest(pageData, input, index) {
     ]
   };
 }
+
+// Export pageCache for other modules to access
+module.exports.pageCache = pageCache;
