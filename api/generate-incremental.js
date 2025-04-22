@@ -1,6 +1,4 @@
-/**
- * API endpoint for incremental test case generation
- */
+// /api/generate-incremental.js - Serverless API for test case generation
 const { generateTestCases } = require('../testGen');
 
 // Helper function to verify user subscription
@@ -17,102 +15,44 @@ async function verifySubscription(userId) {
     // For demo purposes, checking a dummy userId
     return userId === 'premium-user-123';
   } catch (error) {
-    console.error('Subscription Verification Error:', {
-      message: error.message,
-      name: error.name,
-      stack: error.stack
-    });
+    console.error('Error verifying subscription:', error);
     return false;
   }
 }
 
-// Enhanced error handling middleware
-function handleServerError(error, req, res) {
-  // Log the full error details
-  console.error('CRITICAL SERVER ERROR:', {
-    timestamp: new Date().toISOString(),
-    error: {
-      message: error.message,
-      name: error.name,
-      stack: error.stack,
-      code: error.code,
-      type: typeof error
-    },
-    request: {
-      method: req.method,
-      url: req.url,
-      headers: req.headers,
-      body: req.body
-    }
-  });
-
-  // Differentiate error responses based on error type
-  if (error.name === 'ValidationError') {
-    return res.status(400).json({
+// Main handler function for the API endpoint
+module.exports = async (req, res) => {
+  // Support both GET and POST methods
+  const method = req.method.toUpperCase();
+  
+  // Log request to debug
+  console.log(`[API] ${method} request to generate-incremental`);
+  
+  // Only allow POST requests
+  if (method !== 'POST') {
+    return res.status(405).json({
       success: false,
-      error: 'Validation Failed',
-      details: error.message
+      error: 'Method not allowed. Please use POST.'
     });
   }
-
-  // Default 500 error response
-  res.status(500).json({
-    success: false,
-    error: 'Internal Server Error',
-    details: process.env.NODE_ENV === 'development' 
-      ? error.message 
-      : 'An unexpected error occurred'
-  });
-}
-
-module.exports = async (req, res) => {
-  // Add global error handling for unhandled promises
-  process.on('unhandledRejection', (reason, promise) => {
-    console.error('Unhandled Rejection at:', promise, 'reason:', reason);
-  });
-
+  
+  // Get request body
+  const body = req.body || {};
+  const { url, mode, sessionId, elementType, elementIndex, format } = body;
+  
+  // Get user information from request
+  const userId = req.headers.authorization?.split(' ')[1];
+  
   try {
-    // Comprehensive request logging
-    console.log('Incoming Request:', {
-      method: req.method,
-      url: req.url,
-      headers: req.headers,
-      body: req.body
-    });
-
-    // Destructure request with default values and strict validation
-    const { 
-      url = '', 
-      mode = 'first', 
-      sessionId = null, 
-      elementType = null, 
-      elementIndex = 0, 
-      format = 'plain' 
-    } = req.body;
-
-    // Get user information from request
-    const userId = req.headers.authorization?.split(' ')[1];
-
-    // Validate request payload
-    if (mode === 'first' && !url) {
-      const error = new Error('URL is required for initial test generation');
-      error.name = 'ValidationError';
-      throw error;
-    }
-
-    if (mode === 'next' && !sessionId) {
-      const error = new Error('Session ID is required for subsequent test generation');
-      error.name = 'ValidationError';
-      throw error;
-    }
-
+    // Log operation
+    console.log(`Processing ${mode === 'first' ? 'initial' : 'subsequent'} test generation for ${url || sessionId}`);
+    
     // Check if user has premium subscription
     const isPremium = await verifySubscription(userId);
     const userPlan = isPremium ? 'pro' : 'free';
-
-    // Prepare options for test generation
+    
     const options = {
-      mode,
+      mode: mode || 'first',
       sessionId,
       elementType,
       elementIndex: elementIndex ? parseInt(elementIndex) : 0,
@@ -120,10 +60,25 @@ module.exports = async (req, res) => {
       userPlan
     };
     
+    // Validate required parameters
+    if (options.mode === 'first' && !url) {
+      return res.status(400).json({
+        success: false,
+        error: 'URL is required for initial test generation'
+      });
+    }
+    
+    if (options.mode === 'next' && !sessionId) {
+      return res.status(400).json({
+        success: false,
+        error: 'Session ID is required for subsequent test generation'
+      });
+    }
+    
     // Generate test cases
     const result = await generateTestCases(url, options);
     
-    // Check if premium format was requested by non-premium user
+    // Check for premium format request by non-premium user
     if (format && ['katalon', 'maestro', 'testrail'].includes(format) && !isPremium) {
       return res.status(200).json({
         success: false,
@@ -146,11 +101,16 @@ module.exports = async (req, res) => {
       // }
     }
     
+    // Log result status
+    console.log(`Test generation ${result.success ? 'succeeded' : 'failed'}: ${result.error || 'No error'}`);
+    
     // Return the result
-    res.status(200).json(result);
-
+    return res.status(200).json(result);
   } catch (error) {
-    // Centralized error handling
-    handleServerError(error, req, res);
+    console.error('Error in generate-incremental:', error);
+    return res.status(500).json({
+      success: false,
+      error: `Server error: ${error.message || 'Unknown error'}`
+    });
   }
 };
