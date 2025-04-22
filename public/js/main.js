@@ -40,7 +40,8 @@ document.addEventListener('DOMContentLoaded', function() {
     loadingSpinner: document.getElementById('loading-spinner'),
     testCaseCounter: document.getElementById('test-case-counter'),
     promoBanner: document.getElementById('promo-banner'),
-    closePromo: document.getElementById('close-promo')
+    closePromo: document.getElementById('close-promo'),
+    correctionUI: document.getElementById('correction-ui')
   };
   
   // Application state
@@ -76,6 +77,9 @@ document.addEventListener('DOMContentLoaded', function() {
     
     // Update UI based on user plan
     updateUiForUserPlan();
+    
+    // Initialize correction UI
+    initCorrectionUI();
     
     // Handle promo banner close
     if (elements.closePromo) {
@@ -234,6 +238,9 @@ document.addEventListener('DOMContentLoaded', function() {
         state.testCases = state.testCases.concat(data.testCases || []);
         state.totalTestCases = data.totalTestCases || (data.testCases ? data.testCases.length : 0);
         
+        // Apply any stored corrections
+        state.testCases = applyStoredCorrections(state.testCases);
+        
         // Track successful generation
         trackEvent('generate_test_cases', 'usage', url);
         
@@ -318,6 +325,9 @@ document.addEventListener('DOMContentLoaded', function() {
         state.hasMoreElements = data.hasMoreElements;
         state.testCases = state.testCases.concat(data.testCases || []);
         state.totalTestCases = data.totalTestCases || state.testCases.length;
+        
+        // Apply any stored corrections
+        state.testCases = applyStoredCorrections(state.testCases);
         
         // Render new test cases
         if (data.testCases && data.testCases.length > 0) {
@@ -511,6 +521,19 @@ document.addEventListener('DOMContentLoaded', function() {
     // Get or create test case list
     const testCaseList = document.getElementById('test-case-list') || elements.output;
     
+    // Add help info if this is not appending
+    if (!append) {
+      const helpInfo = document.createElement('div');
+      helpInfo.className = 'help-info';
+      helpInfo.innerHTML = `
+        <div class="info-icon">ℹ️</div>
+        <div class="info-text">
+          <strong>Notice:</strong> If test cases don't match the website exactly, use the "Edit" button to correct them. Your changes will be saved for future test generations.
+        </div>
+      `;
+      testCaseList.appendChild(helpInfo);
+    }
+    
     // Add test cases
     testCases.forEach(testCase => {
       if (!testCase) return; // Skip undefined test cases
@@ -523,7 +546,10 @@ document.addEventListener('DOMContentLoaded', function() {
       let content = `
         <div class="test-case-header">
           <h3>${testCase.title || 'Untitled Test Case'}</h3>
-          <span class="priority priority-${testCase.priority || 'Medium'}">${testCase.priority || 'Medium'}</span>
+          <div class="test-case-actions">
+            <button class="edit-button" data-id="${testCase.id}">Edit</button>
+            <span class="priority priority-${testCase.priority || 'Medium'}">${testCase.priority || 'Medium'}</span>
+          </div>
         </div>
         <p>${testCase.description || 'No description provided'}</p>
         <div class="test-steps">
@@ -568,6 +594,244 @@ document.addEventListener('DOMContentLoaded', function() {
     if (elements.testCaseCounter) {
       elements.testCaseCounter.textContent = `Showing ${state.testCases.length} test case${state.testCases.length !== 1 ? 's' : ''}`;
     }
+  }
+  
+  /**
+   * Initialize the correction UI event handlers
+   */
+  function initCorrectionUI() {
+    // Get elements
+    const correctionUI = document.getElementById('correction-ui');
+    const closeButton = document.getElementById('close-correction');
+    const saveButton = document.getElementById('save-correction');
+    const cancelButton = document.getElementById('cancel-correction');
+    
+    if (!correctionUI || !closeButton || !saveButton || !cancelButton) return;
+    
+    // Add event listeners for edit buttons (delegated to parent)
+    document.addEventListener('click', function(e) {
+      if (e.target && e.target.classList.contains('edit-button')) {
+        const testId = e.target.getAttribute('data-id');
+        openCorrectionUI(testId);
+      }
+    });
+    
+    // Close correction UI
+    closeButton.addEventListener('click', function() {
+      correctionUI.classList.add('hidden');
+    });
+    
+    // Cancel editing
+    cancelButton.addEventListener('click', function() {
+      correctionUI.classList.add('hidden');
+    });
+    
+    // Save changes
+    saveButton.addEventListener('click', saveTestCaseChanges);
+  }
+
+  /**
+   * Current test case being edited
+   */
+  let currentEditingTestCase = null;
+
+  /**
+   * Open the correction UI for a specific test case
+   * @param {String} testId - Test case ID
+   */
+  function openCorrectionUI(testId) {
+    // Find the test case in state
+    const testCase = state.testCases.find(tc => tc.id === testId);
+    if (!testCase) return;
+    
+    // Store current test case
+    currentEditingTestCase = testCase;
+    
+    // Get UI elements
+    const correctionUI = document.getElementById('correction-ui');
+    const titleInput = document.getElementById('edit-title');
+    const descriptionInput = document.getElementById('edit-description');
+    const stepsContainer = document.getElementById('edit-steps-container');
+    
+    if (!correctionUI || !titleInput || !descriptionInput || !stepsContainer) return;
+    
+    // Fill in test case details
+    titleInput.value = testCase.title || '';
+    descriptionInput.value = testCase.description || '';
+    
+    // Create inputs for steps
+    stepsContainer.innerHTML = '';
+    if (testCase.steps && testCase.steps.length > 0) {
+      testCase.steps.forEach((step, index) => {
+        const stepEl = document.createElement('div');
+        stepEl.className = 'edit-step';
+        stepEl.innerHTML = `
+          <div class="step-number">Step ${step.step}</div>
+          <div class="form-group">
+            <label for="edit-step-action-${index}">Action:</label>
+            <input type="text" id="edit-step-action-${index}" class="edit-input edit-step-action" data-index="${index}" value="${step.action || ''}">
+          </div>
+          <div class="form-group">
+            <label for="edit-step-expected-${index}">Expected Result:</label>
+            <input type="text" id="edit-step-expected-${index}" class="edit-input edit-step-expected" data-index="${index}" value="${step.expected || ''}">
+          </div>
+        `;
+        stepsContainer.appendChild(stepEl);
+      });
+    }
+    
+    // Show correction UI
+    correctionUI.classList.remove('hidden');
+    
+    // Scroll to correction UI
+    correctionUI.scrollIntoView({ behavior: 'smooth' });
+  }
+
+  /**
+   * Save changes to the test case
+   */
+  function saveTestCaseChanges() {
+    if (!currentEditingTestCase) return;
+    
+    // Get UI elements
+    const titleInput = document.getElementById('edit-title');
+    const descriptionInput = document.getElementById('edit-description');
+    const actionInputs = document.querySelectorAll('.edit-step-action');
+    const expectedInputs = document.querySelectorAll('.edit-step-expected');
+    
+    if (!titleInput || !descriptionInput) return;
+    
+    // Update test case
+    currentEditingTestCase.title = titleInput.value;
+    currentEditingTestCase.description = descriptionInput.value;
+    
+    // Update steps
+    if (currentEditingTestCase.steps && currentEditingTestCase.steps.length > 0) {
+      actionInputs.forEach(input => {
+        const index = parseInt(input.getAttribute('data-index'));
+        if (currentEditingTestCase.steps[index]) {
+          currentEditingTestCase.steps[index].action = input.value;
+        }
+      });
+      
+      expectedInputs.forEach(input => {
+        const index = parseInt(input.getAttribute('data-index'));
+        if (currentEditingTestCase.steps[index]) {
+          currentEditingTestCase.steps[index].expected = input.value;
+        }
+      });
+    }
+    
+    // Re-render test cases
+    renderTestCases(state.testCases);
+    
+    // Hide correction UI
+    const correctionUI = document.getElementById('correction-ui');
+    if (correctionUI) {
+      correctionUI.classList.add('hidden');
+    }
+    
+    // Show success notification
+    showNotification('Test case updated successfully');
+    
+    // Save corrections to localStorage
+    saveCorrectionsToStorage();
+  }
+
+  /**
+   * Save corrections to localStorage for future use
+   */
+  function saveCorrectionsToStorage() {
+    if (!state.sessionId || !currentEditingTestCase) return;
+    
+    // Get existing corrections
+    let corrections = JSON.parse(localStorage.getItem('testCaseCorrections') || '{}');
+    
+    // Create key using URL as identifier
+    const urlKey = state.currentUrl;
+    if (!corrections[urlKey]) {
+      corrections[urlKey] = {};
+    }
+    
+    // Save the correction using test case ID as key
+    corrections[urlKey][currentEditingTestCase.id] = {
+      title: currentEditingTestCase.title,
+      description: currentEditingTestCase.description,
+      steps: currentEditingTestCase.steps.map(step => ({
+        action: step.action,
+        expected: step.expected
+      }))
+    };
+    
+    // Save to localStorage
+    localStorage.setItem('testCaseCorrections', JSON.stringify(corrections));
+  }
+
+  /**
+   * Apply stored corrections when loading test cases
+   * @param {Array} testCases - Test cases to check for corrections
+   * @returns {Array} - Corrected test cases
+   */
+  function applyStoredCorrections(testCases) {
+    if (!testCases || !state.currentUrl) return testCases;
+    
+    // Get stored corrections
+    const corrections = JSON.parse(localStorage.getItem('testCaseCorrections') || '{}');
+    const urlCorrections = corrections[state.currentUrl] || {};
+    
+    // Apply corrections if they exist
+    return testCases.map(testCase => {
+      const correction = urlCorrections[testCase.id];
+      if (correction) {
+        // Create a copy to avoid mutating the original
+        const correctedCase = { ...testCase };
+        
+        // Apply title and description corrections
+        if (correction.title) correctedCase.title = correction.title;
+        if (correction.description) correctedCase.description = correction.description;
+        
+        // Apply step corrections
+        if (correction.steps && correctedCase.steps) {
+          correctedCase.steps = correctedCase.steps.map((step, index) => {
+            if (correction.steps[index]) {
+              return {
+                ...step,
+                action: correction.steps[index].action || step.action,
+                expected: correction.steps[index].expected || step.expected
+              };
+            }
+            return step;
+          });
+        }
+        
+        return correctedCase;
+      }
+      return testCase;
+    });
+  }
+
+  /**
+   * Show a notification message
+   * @param {String} message - Message to show
+   */
+  function showNotification(message) {
+    // Create notification element
+    const notification = document.createElement('div');
+    notification.className = 'notification';
+    notification.textContent = message;
+    
+    // Add to document
+    document.body.appendChild(notification);
+    
+    // Automatically remove after 3 seconds
+    setTimeout(() => {
+      notification.classList.add('fade-out');
+      setTimeout(() => {
+        if (notification.parentNode) {
+          notification.parentNode.removeChild(notification);
+        }
+      }, 500);
+    }, 3000);
   }
   
   /**
