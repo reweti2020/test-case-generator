@@ -1,57 +1,50 @@
-// /api/create-checkout-session.js - Serverless API for creating Stripe checkout sessions
+/**
+ * API endpoint for creating Stripe checkout sessions
+ */
 const stripe = process.env.STRIPE_SECRET_KEY ? 
   require('stripe')(process.env.STRIPE_SECRET_KEY) : 
   null;
 
 module.exports = async (req, res) => {
-  // Support both GET and POST methods
-  const method = req.method.toUpperCase();
-  
-  // Log request to debug
-  console.log(`[API] ${method} request to create-checkout-session`);
-  
-  // Only allow POST requests
-  if (method !== 'POST') {
-    return res.status(405).json({
-      success: false,
-      error: 'Method not allowed. Please use POST.'
-    });
-  }
-  
-  // Check if Stripe is configured
-  if (!stripe) {
-    console.log('Stripe is not configured. Using demo mode.');
-    
-    // Return a mock session ID for demo purposes
-    return res.status(200).json({
-      success: true,
-      id: 'demo_' + Math.random().toString(36).substring(2, 15)
-    });
-  }
-  
-  // Get request body
-  const { plan } = req.body;
-  
-  // Plan details
-  const plans = {
-    pro: {
-      priceId: process.env.STRIPE_PRO_PRICE_ID || 'price_demo_pro', // Your Stripe price ID
-      name: 'Pro Plan'
-    },
-    enterprise: {
-      priceId: process.env.STRIPE_ENTERPRISE_PRICE_ID || 'price_demo_enterprise',
-      name: 'Enterprise Plan'
-    }
-  };
-  
-  if (!plan || !plans[plan]) {
-    return res.status(400).json({
-      success: false,
-      error: 'Invalid plan specified'
-    });
-  }
+  // Log the start of the function to help with debugging
+  console.log('[API] Processing create-checkout-session request');
   
   try {
+    const { plan } = req.body || {};
+    
+    // Log the request parameters
+    console.log(`Request params: ${JSON.stringify({ plan })}`);
+    
+    // Plan details
+    const plans = {
+      pro: {
+        priceId: process.env.STRIPE_PRO_PRICE_ID || 'price_demo_pro', // Your Stripe price ID
+        name: 'Pro Plan'
+      },
+      enterprise: {
+        priceId: process.env.STRIPE_ENTERPRISE_PRICE_ID || 'price_demo_enterprise',
+        name: 'Enterprise Plan'
+      }
+    };
+    
+    if (!plan || !plans[plan]) {
+      return res.status(400).json({
+        success: false,
+        error: 'Invalid plan specified'
+      });
+    }
+    
+    // Check if Stripe is configured
+    if (!stripe) {
+      console.log('Stripe is not configured. Using demo mode.');
+      
+      // Return a mock session ID for demo purposes
+      return res.status(200).json({
+        success: true,
+        id: 'demo_' + Math.random().toString(36).substring(2, 15)
+      });
+    }
+    
     // Create checkout session
     const session = await stripe.checkout.sessions.create({
       payment_method_types: ['card'],
@@ -62,19 +55,19 @@ module.exports = async (req, res) => {
         },
       ],
       mode: 'subscription',
-      success_url: `${req.headers.origin || 'https://your-domain.com'}/success?session_id={CHECKOUT_SESSION_ID}`,
-      cancel_url: `${req.headers.origin || 'https://your-domain.com'}/`,
+      success_url: `${req.headers.origin || 'https://velocityqa.online'}/success?session_id={CHECKOUT_SESSION_ID}`,
+      cancel_url: `${req.headers.origin || 'https://velocityqa.online'}/`,
     });
     
-    res.status(200).json({ 
+    return res.status(200).json({ 
       success: true,
       id: session.id 
     });
   } catch (error) {
     console.error('Error creating checkout session:', error);
-    res.status(500).json({ 
+    return res.status(500).json({ 
       success: false,
-      error: error.message 
+      error: error.message || 'Unknown error' 
     });
   }
 };
