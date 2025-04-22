@@ -282,6 +282,32 @@ button:disabled {
   margin-bottom: 1rem;
 }
 
+/* Edit button styling */
+.edit-button {
+  background-color: #1e293b; /* Darker background */
+  border: 1px solid var(--teal);
+  color: var(--teal);
+  padding: 0.3rem 0.7rem;
+  border-radius: var(--border-radius);
+  font-size: 0.8rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: var(--transition);
+  margin-right: 0.75rem;
+}
+
+.edit-button:hover {
+  background-color: var(--teal);
+  color: white;
+}
+
+/* Update test-case-header to better position the edit button */
+.test-case-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
 .test-case-header h3 {
   margin: 0;
   color: var(--teal);
