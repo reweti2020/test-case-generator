@@ -96,25 +96,57 @@ async function generateFirstTest(url, userPlan = 'pro') {
     // Load HTML into cheerio
     const $ = cheerio.load(response.data);
     
-    // Extract basic page data
-    const pageData = {
-      url,
-      title: $('title').text().trim() || 'Unknown Title',
-      extractedAt: new Date().toISOString()
-    };
+    // Extract basic page data with better title extraction
+let pageTitle = $('title').text().trim();
+if (!pageTitle) {
+  // Try to find title in meta tags
+  pageTitle = $('meta[property="og:title"]').attr('content') || 
+              $('meta[name="twitter:title"]').attr('content') || 
+              'Unknown Title';
+}
+
+// Add debugging to see what's being extracted
+console.log('Extracted page title:', pageTitle);
+
+const pageData = {
+  url,
+  title: pageTitle,
+  extractedAt: new Date().toISOString()
+};
     
-    // Extract buttons - limit to first 20 for performance
-    pageData.buttons = [];
-    $('button, input[type="submit"], input[type="button"], .btn, [role="button"]').slice(0, 20).each((i, el) => {
-      const $el = $(el);
-      pageData.buttons.push({
-        text: $el.text().trim() || $el.val() || 'Unnamed Button',
-        type: $el.attr('type') || 'button',
-        id: $el.attr('id') || '',
-        name: $el.attr('name') || '',
-        class: $el.attr('class') || ''
-      });
-    });
+pageData.buttons = [];
+$('button, input[type="submit"], input[type="button"], .btn, [role="button"], a.button, a.btn').slice(0, 20).each((i, el) => {
+  const $el = $(el);
+  
+  // Get text content with better handling for nested elements
+  let buttonText = $el.text().trim();
+  
+  // If no direct text, try getting value attribute
+  if (!buttonText) {
+    buttonText = $el.val() || '';
+  }
+  
+  // If still no text, try getting text from child elements
+  if (!buttonText) {
+    buttonText = $el.find('*').text().trim();
+  }
+  
+  // If still no text, try getting aria-label
+  if (!buttonText) {
+    buttonText = $el.attr('aria-label') || 'Unnamed Button';
+  }
+  
+  // Debug log the extracted button
+  console.log(`Button ${i+1}:`, buttonText);
+  
+  pageData.buttons.push({
+    text: buttonText,
+    type: $el.attr('type') || 'button',
+    id: $el.attr('id') || '',
+    name: $el.attr('name') || '',
+    class: $el.attr('class') || ''
+  });
+});
     
     // Extract forms - limit to first 10
     pageData.forms = [];
