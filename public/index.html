@@ -3,15 +3,32 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Test Case Generator</title>
-  <link rel="stylesheet" href="css/styles.css">
-  <script src="js/main.js" defer></script>
+  <title>Test Case Generator | VelocityQA</title>
+  <meta name="description" content="Automatically generate test cases from any website URL. Perfect for QA professionals and development teams.">
+  
+  <!-- VelocityQA Branding Fonts -->
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  
+  <!-- Styles -->
+  <link rel="stylesheet" href="style.css">
+  
+  <!-- Google Analytics -->
+  <script async src="https://www.googletagmanager.com/gtag/js?id=G-W0PBYFYX7Q"></script>
+  <script>
+    window.dataLayer = window.dataLayer || [];
+    function gtag(){dataLayer.push(arguments);}
+    gtag('js', new Date());
+    gtag('config', 'G-W0PBYFYX7Q');
+  </script>
 </head>
 <body>
+  <!-- Header -->
   <header>
-    <div class="header-content">
-      <h1>Test Case Generator</h1>
-      <p>Automatically generate test cases from any website</p>
+    <div class="container">
+      <div class="header-content">
+        <h1>Test Case Generator</h1>
+        <p>Automatically generate test cases from any website</p>
+      </div>
     </div>
   </header>
 
@@ -88,7 +105,7 @@
     <section class="pro-services-banner">
       <h3>Need Expert QA Support?</h3>
       <p>Get professional QA consultation from our expert team.</p>
-      <button id="learn-more-qa">Learn More</button>
+      <a href="https://velocityqa.com.au/contact" target="_blank" class="button-secondary">Learn More</a>
     </section>
   </main>
 
@@ -151,17 +168,14 @@
     </div>
   </div>
 
+  <!-- Footer -->
   <footer>
-    <p>&copy; 2025 Test Case Generator. All rights reserved.</p>
+    <div class="container">
+      <p>&copy; 2025 VelocityQA. All rights reserved.</p>
+    </div>
   </footer>
 
-  <!-- Google Analytics (optional) -->
-  <script async src="https://www.googletagmanager.com/gtag/js?id=GA_MEASUREMENT_ID"></script>
-  <script>
-    window.dataLayer = window.dataLayer || [];
-    function gtag(){dataLayer.push(arguments);}
-    gtag('js', new Date());
-    gtag('config', 'GA_MEASUREMENT_ID');
-  </script>
+  <!-- JavaScript -->
+  <script src="js/main.js"></script>
 </body>
 </html>
