@@ -293,35 +293,34 @@ document.addEventListener('DOMContentLoaded', function() {
     }
   }
   
-  /**
-   * Handle "Generate Next Test" button click
-   */
-  async function handleGenerateNextTest() {
-    if (!state.hasMoreElements || !state.pageData || !state.processed) {
-      showError('Missing page data or no more elements to test');
-      return;
-    }
+/**
+ * Handle "Generate Next Test" button click
+ */
+async function handleGenerateNextTest() {
+  if (!state.hasMoreElements || !state.sessionId) {
+    showError('No more elements to test');
+    return;
+  }
+  
+  // Show loading state
+  setLoading(true);
+  
+  try {
+    // Ensure we have formatSelect
+    const format = elements.formatSelect ? elements.formatSelect.value : 'plain';
     
-    // Show loading state
-    setLoading(true);
-    
-    try {
-      // Ensure we have formatSelect
-      const format = elements.formatSelect ? elements.formatSelect.value : 'plain';
-      
-      const response = await fetch('/api/generate-incremental', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          mode: 'next',
-          pageData: state.pageData,
-          processed: state.processed,
-          elementType: state.nextElementType,
-          elementIndex: state.nextElementIndex,
-          format: format,
-          batchSize: 5  // Request 5 tests at once
-        })
-      });
+    const response = await fetch('/api/generate-incremental', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        sessionId: state.sessionId,
+        mode: 'next',
+        elementType: state.nextElementType,
+        elementIndex: state.nextElementIndex,
+        format: format,
+        batchSize: 5  // Request 5 tests at once
+      })
+    });
       
       if (!response.ok) {
         throw new Error(`Server responded with status: ${response.status}`);
