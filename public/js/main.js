@@ -137,10 +137,10 @@ document.addEventListener('DOMContentLoaded', function() {
     
     if (state.userPlan === 'free') {
       // Disable premium formats but keep them visible
-      if (katalon) katalon.disabled = true;
-      if (maestro) maestro.disabled = true;
-      if (html) html.disabled = true;
-      if (csv) csv.disabled = true;
+      if (katalon) katalon.enabled = true;
+      if (maestro) maestro.enabled = true;
+      if (html) html.enabled = true;
+      if (csv) csv.enabled = true;
       
       // Add premium labels
       const premiumFormats = [katalon, maestro, html, csv].filter(el => el);
