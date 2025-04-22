@@ -42,39 +42,39 @@ module.exports = async (req, res) => {
       });
     }
     
-    // For subsequent calls, we need pageData and processed state in the body
-    if (mode === 'next' && (!body.pageData || !body.processed)) {
-      return res.status(400).json({
-        success: false,
-        error: 'Page data and processed state are required for subsequent test generation'
-      });
-    }
+   // For subsequent calls, we need pageData and processed state
+if (mode === 'next' && (!body.pageData || !body.processed)) {
+  return res.status(400).json({
+    success: false,
+    error: 'Page data and processed state are required for subsequent test generation'
+  });
+}
 
-    // Force pro access for testing
-    const userPlan = 'pro';
-    
-    // Process the request based on mode
-    let result;
-    
-    if (mode === 'first') {
-      // For first call, generate initial test
-      result = await generateTestCases(url, {
-        mode: 'first',
-        userPlan: userPlan
-      });
-    } else {
-      // For subsequent calls, generate next batch of tests
-      // Pass all state from the request body directly
-      result = await generateTestCases(null, {
-        mode: 'next',
-        pageData: body.pageData,
-        processed: body.processed,
-        elementType: elementType,
-        elementIndex: elementIndex,
-        userPlan: userPlan,
-        batchSize: batchSize
-      });
-    }
+// Force pro access for testing
+const userPlan = 'pro';
+
+// Process the request based on mode
+let result;
+
+if (mode === 'first') {
+  // For first call, generate initial test
+  result = await generateTestCases(url, {
+    mode: 'first',
+    userPlan: userPlan
+  });
+} else {
+  // For subsequent calls, generate next batch directly with body data
+  // No sessionId required - fully stateless approach
+  result = await generateTestCases(null, {
+    mode: 'next',
+    pageData: body.pageData,
+    processed: body.processed,
+    elementType: elementType,
+    elementIndex: elementIndex,
+    userPlan: userPlan,
+    batchSize: batchSize
+  });
+}
     
     // Return the result to the client
     return res.status(200).json(result);
