@@ -1,6 +1,5 @@
 /**
  * Main JavaScript file for Test Case Generator
- * Fixed version with debugging functionality
  */
 document.addEventListener('DOMContentLoaded', function() {
   // Add promotional banner
@@ -42,13 +41,19 @@ document.addEventListener('DOMContentLoaded', function() {
     testCaseCounter: document.getElementById('test-case-counter'),
     promoBanner: document.getElementById('promo-banner'),
     closePromo: document.getElementById('close-promo'),
-    correctionUI: document.getElementById('correction-ui')
+    correctionUI: document.getElementById('correction-ui'),
+    debugSection: document.getElementById('debug-section'),
+    debugMode: document.getElementById('debug-mode'),
+    debugSelector: document.getElementById('debug-selector'),
+    runDebug: document.getElementById('run-debug'),
+    debugResults: document.getElementById('debug-results')
   };
   
   // Application state
   const state = {
-    pageData: null,           // Store all page data from server
-    processed: null,          // Store processing state
+    sessionId: null,        // Store session ID for API calls
+    pageData: null,         // Store all page data from server
+    processed: null,        // Store processing state
     nextElementType: null,
     nextElementIndex: 0,
     hasMoreElements: false,
@@ -57,8 +62,8 @@ document.addEventListener('DOMContentLoaded', function() {
     totalPages: 0,
     currentPage: 1,
     pageSize: 5,
-    userPlan: 'pro',          // Force pro plan for testing
-    freeLimit: 9999,          // Very high limit for testing
+    userPlan: 'pro',        // Force pro plan for testing
+    freeLimit: 9999,        // Very high limit for testing
     currentUrl: '',
     isLoading: false
   };
@@ -161,38 +166,30 @@ document.addEventListener('DOMContentLoaded', function() {
   }
   
   /**
-   * Initialize the debug tools functionality
+   * Initialize debug tools
    */
   function initDebugTools() {
-    // Debug mode toggle
-    const debugModeCheckbox = document.getElementById('debug-mode');
-    if (debugModeCheckbox) {
-      debugModeCheckbox.addEventListener('change', function() {
-        const debugSection = document.getElementById('debug-section');
-        if (debugSection) {
-          debugSection.style.display = this.checked ? 'block' : 'none';
+    if (elements.debugMode) {
+      elements.debugMode.addEventListener('change', function() {
+        if (elements.debugSection) {
+          elements.debugSection.style.display = this.checked ? 'block' : 'none';
         }
       });
     }
     
-    // Debug button click
-    const runDebugButton = document.getElementById('run-debug');
-    if (runDebugButton) {
-      runDebugButton.addEventListener('click', async function() {
-        const debugResults = document.getElementById('debug-results');
-        const debugSelector = document.getElementById('debug-selector');
+    if (elements.runDebug) {
+      elements.runDebug.addEventListener('click', async function() {
+        if (!elements.debugResults || !elements.debugSelector) return;
         
-        if (!debugResults || !debugSelector) return;
-        
-        // Get the current URL from the state rather than directly accessing urlInput
+        // Get URL from state
         const url = state.currentUrl;
         if (!url) {
-          debugResults.innerHTML = '<p class="error">❌ Please enter a URL in the main form first</p>';
+          elements.debugResults.innerHTML = '<p class="error">❌ Please enter a URL in the main form first</p>';
           return;
         }
         
         // Show loading state
-        debugResults.innerHTML = '<div class="spinner"></div><p>Analyzing elements...</p>';
+        elements.debugResults.innerHTML = '<div class="spinner"></div><p>Analyzing elements...</p>';
         
         try {
           const response = await fetch('/api/debug-element', {
@@ -200,7 +197,7 @@ document.addEventListener('DOMContentLoaded', function() {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
               url: url,
-              selector: debugSelector.value.trim()
+              selector: elements.debugSelector.value.trim()
             })
           });
           
@@ -211,7 +208,6 @@ document.addEventListener('DOMContentLoaded', function() {
           const data = await response.json();
           
           if (data.success) {
-            // Format the results nicely
             let resultsHTML = `<p>Found ${data.results.length} element(s) matching "${data.selector}" on ${data.url}</p><pre>`;
             data.results.forEach((element, index) => {
               resultsHTML += `\n[${index}] ${element.tagName}: ${element.content || 'No content'}\n`;
@@ -219,12 +215,12 @@ document.addEventListener('DOMContentLoaded', function() {
             });
             resultsHTML += '</pre>';
             
-            debugResults.innerHTML = resultsHTML;
+            elements.debugResults.innerHTML = resultsHTML;
           } else {
-            debugResults.innerHTML = `<p class="error">❌ ${data.error || 'Unknown error'}</p>`;
+            elements.debugResults.innerHTML = `<p class="error">❌ ${data.error || 'Unknown error'}</p>`;
           }
         } catch (error) {
-          debugResults.innerHTML = `<p class="error">❌ Debug API error: ${error.message || 'Unknown error'}</p>`;
+          elements.debugResults.innerHTML = `<p class="error">❌ Debug API error: ${error.message || 'Unknown error'}</p>`;
         }
       });
     }
@@ -261,6 +257,7 @@ document.addEventListener('DOMContentLoaded', function() {
     if (!elements.urlInput || !elements.output) return;
     
     // Reset session state
+    state.sessionId = null;
     state.pageData = null;
     state.processed = null;
     state.testCases = [];
@@ -311,6 +308,9 @@ document.addEventListener('DOMContentLoaded', function() {
       const data = await response.json();
       
       if (data.success) {
+        // Store session ID for future requests
+        state.sessionId = data.sessionId;
+        
         // Store complete data returned from server
         state.pageData = data.pageData;
         state.processed = data.processed;
@@ -371,8 +371,8 @@ document.addEventListener('DOMContentLoaded', function() {
    * Handle "Generate Next Test" button click
    */
   async function handleGenerateNextTest() {
-    if (!state.hasMoreElements || !state.pageData || !state.processed) {
-      showError('Missing page data or no more elements to test');
+    if (!state.hasMoreElements || !state.sessionId) {
+      showError('No more elements to test or missing session ID');
       return;
     }
     
@@ -388,8 +388,7 @@ document.addEventListener('DOMContentLoaded', function() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           mode: 'next',
-          pageData: state.pageData,
-          processed: state.processed,
+          sessionId: state.sessionId,          // Use sessionId for state tracking
           elementType: state.nextElementType,
           elementIndex: state.nextElementIndex,
           format: format,
@@ -405,8 +404,8 @@ document.addEventListener('DOMContentLoaded', function() {
       
       if (data.success) {
         // Update state with received data
-        state.pageData = data.pageData;
-        state.processed = data.processed;
+        state.pageData = data.pageData || state.pageData;
+        state.processed = data.processed || state.processed;
         state.nextElementType = data.nextElementType;
         state.nextElementIndex = data.nextElementIndex;
         state.hasMoreElements = data.hasMoreElements;
@@ -951,24 +950,24 @@ document.addEventListener('DOMContentLoaded', function() {
     if (!elements.elementInfo || !state.pageData) return;
     
     // Calculate progress percentages
-    const buttonProgress = state.pageData.buttons.length > 0 ? 
+    const buttonProgress = state.pageData.buttons?.length > 0 ? 
       Math.round((state.processed.buttons / state.pageData.buttons.length) * 100) : 100;
     
-    const formProgress = state.pageData.forms.length > 0 ? 
+    const formProgress = state.pageData.forms?.length > 0 ? 
       Math.round((state.processed.forms / state.pageData.forms.length) * 100) : 100;
     
-    const linkProgress = state.pageData.links.length > 0 ? 
+    const linkProgress = state.pageData.links?.length > 0 ? 
       Math.round((state.processed.links / state.pageData.links.length) * 100) : 100;
     
-    const inputProgress = state.pageData.inputs.length > 0 ? 
+    const inputProgress = state.pageData.inputs?.length > 0 ? 
       Math.round((state.processed.inputs / state.pageData.inputs.length) * 100) : 100;
     
     // Calculate overall progress
-    const totalElements = state.pageData.buttons.length + state.pageData.forms.length + 
-                        state.pageData.links.length + state.pageData.inputs.length;
+    const totalElements = (state.pageData.buttons?.length || 0) + (state.pageData.forms?.length || 0) + 
+                        (state.pageData.links?.length || 0) + (state.pageData.inputs?.length || 0);
     
-    const processedElements = state.processed.buttons + state.processed.forms + 
-                            state.processed.links + state.processed.inputs;
+    const processedElements = (state.processed.buttons || 0) + (state.processed.forms || 0) + 
+                            (state.processed.links || 0) + (state.processed.inputs || 0);
     
     const overallProgress = totalElements > 0 ? 
       Math.round((processedElements / totalElements) * 100) : 100;
@@ -1037,8 +1036,7 @@ document.addEventListener('DOMContentLoaded', function() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          pageData: state.pageData,
-          testCases: state.testCases,
+          sessionId: state.sessionId,
           format: format
         })
       });
