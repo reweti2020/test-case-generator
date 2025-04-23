@@ -34,19 +34,27 @@ async function generateTestCases(url, options = {}) {
     }
   }
   
-  // First-time call logic (analyzing website)
-  try {
-    console.log(`Fetching URL: ${url}`);
-    
-    // Fetch the HTML content with a timeout
-    const response = await axios.get(url, {
-      timeout: 8000, // Reduced timeout for serverless environment
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
-        'Accept': 'text/html,application/xhtml+xml,application/xml',
-        'Accept-Language': 'en-US,en;q=0.9'
-      }
-    });
+// First-time call logic (analyzing website)
+try {
+  console.log(`Fetching URL: ${url}`);
+  
+  // Validate URL format first
+  if (!url.match(/^https?:\/\//i)) {
+    url = 'https://' + url;
+    console.log(`Added protocol to URL: ${url}`);
+  }
+  
+  // Fetch the HTML content with a timeout and better error handling
+  const response = await axios.get(url, {
+    timeout: 6000, // Reduced timeout for serverless environment 
+    headers: {
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+      'Accept': 'text/html,application/xhtml+xml,application/xml',
+      'Accept-Language': 'en-US,en;q=0.9'
+    },
+    maxContentLength: 1024 * 1024, // Limit to 1MB
+    validateStatus: status => status < 500 // Accept all statuses under 500
+  });
     
     // Check response status
     if (response.status !== 200) {
