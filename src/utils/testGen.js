@@ -107,7 +107,7 @@ try {
   };
 
   // Extract elements more efficiently - with error handling for each section
-  // Extract buttons - limit to first 20 for performance
+  // Extract buttons - limit to first 200 for performance
   pageData.buttons = [];
   try {
     $('button, input[type="submit"], input[type="button"], .btn, [role="button"]').slice(0, 30).each((i, el) => {
@@ -130,7 +130,7 @@ try {
     // Continue with empty buttons array
   }
 
-  // Extract forms - limit to first 10
+  // Extract forms - limit to first 100
   pageData.forms = [];
   try {
     $('form').slice(0, 15).each((i, el) => {
@@ -149,7 +149,7 @@ try {
     console.warn('Error extracting forms:', error);
   }
 
-  // Extract links - limit to first 15
+  // Extract links - limit to first 150
   pageData.links = [];
   try {
     $('a[href]').slice(0, 30).each((i, el) => {
@@ -173,7 +173,7 @@ try {
     console.warn('Error extracting links:', error);
   }
 
-  // Extract inputs - limit to first 15
+  // Extract inputs - limit to first 150
   pageData.inputs = [];
   try {
     $('input[type!="submit"][type!="button"], textarea, select').slice(0, 25).each((i, el) => {
