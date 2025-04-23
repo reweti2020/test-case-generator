@@ -55,6 +55,13 @@
         
         <button type="submit" id="generate-button" class="button-primary">Generate Test Cases</button>
       </form>
+      
+      <!-- Debug Mode Toggle -->
+      <div class="debug-toggle" style="text-align: right; margin-top: 5px;">
+        <label style="font-size: 0.8rem; color: #94a3b8; cursor: pointer;">
+          <input type="checkbox" id="debug-mode"> Use Debug Mode
+        </label>
+      </div>
     </section>
 
     <!-- Upgrade Banner (hidden by default) -->
@@ -136,12 +143,8 @@
     <section id="debug-section" class="debug-section" style="display: none;">
       <h3>Debug Tools</h3>
       <p>Use these tools to help diagnose issues with test case generation.</p>
-
-      <div class="debug-toggle" style="text-align: right; margin-top: 5px;">
-  <label>
-    <input type="checkbox" id="debug-mode"> Debug Mode
-  </label>
-</div>
+      
+      <!-- Removed duplicate debug toggle -->
       
       <div class="form-group">
         <label for="debug-selector">CSS Selector:</label>
