@@ -1,5 +1,5 @@
 // api/generate-incremental.js
-// Real website analyzer version
+// Context-aware website analyzer version
 const axios = require('axios');
 const cheerio = require('cheerio');
 
@@ -67,7 +67,7 @@ module.exports = async (req, res) => {
         // Extract page title
         const pageTitle = $('title').text().trim() || 'Untitled Page';
         
-        // Extract elements
+        // Extract elements with context
         const pageData = {
           url: fetchUrl,
           title: pageTitle,
@@ -78,46 +78,129 @@ module.exports = async (req, res) => {
           inputs: []
         };
         
-        // Extract buttons (limit to 20)
+        // Extract buttons with more context (limit to 20)
         $('button, input[type="submit"], input[type="button"], .btn, [role="button"]').slice(0, 20).each((i, el) => {
           const $el = $(el);
+          // Get parent context for better naming
+          const parentSection = getParentContext($, el);
+          
           pageData.buttons.push({
             text: $el.text().trim() || $el.val() || 'Unnamed Button',
             type: $el.attr('type') || 'button',
             id: $el.attr('id') || '',
             name: $el.attr('name') || '',
-            class: $el.attr('class') || ''
+            class: $el.attr('class') || '',
+            context: parentSection, // Add context
+            // Store HTML for debugging
+            html: $.html(el).substring(0, 200)
           });
         });
         
-        // Extract forms (limit to 10)
+        // Extract forms with context (limit to 10)
         $('form').slice(0, 10).each((i, el) => {
           const $form = $(el);
+          // Get parent context
+          const parentSection = getParentContext($, el);
+          const formHeading = $form.find('h1, h2, h3, h4, h5, h6').first().text().trim();
+          
           pageData.forms.push({
             id: $form.attr('id') || '',
             action: $form.attr('action') || '',
-            method: $form.attr('method') || ''
+            method: $form.attr('method') || '',
+            heading: formHeading,
+            context: parentSection, // Add context
+            // Count input fields
+            inputCount: $form.find('input, select, textarea').length,
+            // Store HTML
+            html: $.html(el).substring(0, 200)
           });
         });
         
-        // Extract links (limit to 15)
-        $('a[href]').slice(0, 15).each((i, el) => {
+        // Extract links with context (limit to 25)
+        $('a[href]').slice(0, 25).each((i, el) => {
           const $link = $(el);
+          
+          // Get text content properly
+          let linkText = $link.text().trim();
+          if (!linkText) {
+            // Look for image alt text
+            const $img = $link.find('img');
+            if ($img.length > 0) {
+              linkText = $img.attr('alt') || 'Image Link';
+            } else {
+              linkText = 'Unnamed Link';
+            }
+          }
+          
+          // Get link context
+          const parentSection = getParentContext($, el);
+          // Check for menu/nav context
+          const isInNav = $link.closest('nav, [role="navigation"], .menu, .navigation, header').length > 0;
+          const isInFooter = $link.closest('footer, .footer').length > 0;
+          
+          // Determine section
+          let section = parentSection;
+          if (isInNav) section = 'Navigation Menu';
+          if (isInFooter) section = 'Footer';
+          
           pageData.links.push({
-            text: $link.text().trim() || 'Unnamed Link',
+            text: linkText,
             href: $link.attr('href') || '',
-            id: $link.attr('id') || ''
+            id: $link.attr('id') || '',
+            context: section,
+            isNavLink: isInNav,
+            isFooterLink: isInFooter,
+            // Store any relevant classes
+            classes: $link.attr('class') || '',
+            // Store HTML
+            html: $.html(el).substring(0, 200)
           });
         });
         
-        // Extract inputs (limit to 15)
+        // Extract inputs with context (limit to 15)
         $('input[type!="submit"][type!="button"], textarea, select').slice(0, 15).each((i, el) => {
           const $input = $(el);
+          
+          // Find label for this input
+          let label = '';
+          const id = $input.attr('id');
+          if (id) {
+            label = $(`label[for="${id}"]`).text().trim();
+          }
+          if (!label) {
+            // Try to get label from parent
+            label = $input.closest('label').text().trim();
+            // Remove the input value from the label text if present
+            const inputVal = $input.val();
+            if (inputVal && label.includes(inputVal)) {
+              label = label.replace(inputVal, '').trim();
+            }
+          }
+          
+          // Get form context if available
+          const $form = $input.closest('form');
+          let formContext = '';
+          if ($form.length > 0) {
+            formContext = $form.find('h1, h2, h3, h4, h5, h6').first().text().trim();
+            if (!formContext) {
+              // Try to get form context from buttons
+              const $button = $form.find('button, input[type="submit"]').first();
+              if ($button.length > 0) {
+                formContext = $button.text().trim() || $button.val();
+              }
+            }
+          }
+          
           pageData.inputs.push({
             type: $input.attr('type') || 'text',
             id: $input.attr('id') || '',
             name: $input.attr('name') || '',
-            placeholder: $input.attr('placeholder') || ''
+            placeholder: $input.attr('placeholder') || '',
+            label: label,
+            context: formContext || getParentContext($, el),
+            isRequired: $input.attr('required') !== undefined || $input.hasClass('required'),
+            // Store HTML
+            html: $.html(el).substring(0, 200)
           });
         });
         
@@ -138,7 +221,8 @@ module.exports = async (req, res) => {
         sessionCache[newSessionId] = {
           pageData: pageData,
           processed: processed,
-          testCases: []
+          testCases: [],
+          processedElements: new Set() // Track processed elements to avoid duplicates
         };
         
         // Generate first test case (page verification)
@@ -217,116 +301,149 @@ module.exports = async (req, res) => {
       const session = sessionCache[sessionId];
       const pageData = session.pageData;
       const processed = session.processed;
+      const processedElements = session.processedElements || new Set();
       
-      // Generate batch of test cases
+      // Generate batch of unique test cases
       const newTestCases = [];
+      let remainingBatchSize = batchSize;
       
       // Keep track of whether we have more elements
       let hasMoreElements = false;
-      let nextElementType = null;
-      let nextElementIndex = 0;
+      let nextElementType = elementType;
+      let nextElementIndex = elementIndex;
       
-      // Generate up to batchSize test cases
-      for (let i = 0; i < batchSize; i++) {
-        // Try to generate a test case based on current element type and index
-        let testCase = null;
-        let currentElementType = elementType;
-        let currentElementIndex = elementIndex + i;
-        
-        // If no element type specified, find one
-        if (!currentElementType) {
-          if (processed.buttons < pageData.buttons.length) {
-            currentElementType = 'button';
-            currentElementIndex = processed.buttons;
-          } else if (processed.forms < pageData.forms.length) {
-            currentElementType = 'form';
-            currentElementIndex = processed.forms;
-          } else if (processed.links < pageData.links.length) {
-            currentElementType = 'link';
-            currentElementIndex = processed.links;
-          } else if (processed.inputs < pageData.inputs.length) {
-            currentElementType = 'input';
-            currentElementIndex = processed.inputs;
+      // Helper function to check if an element has been processed
+      const isElementProcessed = (type, index) => {
+        return processedElements.has(`${type}-${index}`);
+      };
+      
+      // Process each element type
+      const elementTypes = ['button', 'link', 'form', 'input'];
+      let typesExhausted = 0;
+      
+      while (remainingBatchSize > 0 && typesExhausted < elementTypes.length) {
+        // If no element type specified or current type exhausted, find one
+        if (!nextElementType || nextElementIndex >= pageData[`${nextElementType}s`].length) {
+          // Try each element type in sequence
+          let found = false;
+          for (const type of elementTypes) {
+            if (processed[`${type}s`] < pageData[`${type}s`].length) {
+              nextElementType = type;
+              nextElementIndex = processed[`${type}s`];
+              found = true;
+              break;
+            }
           }
-        }
-        
-        // If still no element type or we've processed all elements, break
-        if (!currentElementType) {
-          break;
-        }
-        
-        // Check if we've processed all elements of this type
-        if (currentElementIndex >= pageData[`${currentElementType}s`].length) {
-          // Try another element type
-          if (processed.buttons < pageData.buttons.length) {
-            currentElementType = 'button';
-            currentElementIndex = processed.buttons;
-          } else if (processed.forms < pageData.forms.length) {
-            currentElementType = 'form';
-            currentElementIndex = processed.forms;
-          } else if (processed.links < pageData.links.length) {
-            currentElementType = 'link';
-            currentElementIndex = processed.links;
-          } else if (processed.inputs < pageData.inputs.length) {
-            currentElementType = 'input';
-            currentElementIndex = processed.inputs;
-          } else {
+          
+          if (!found) {
             // No more elements to process
             break;
           }
         }
         
+        // Find next unprocessed element
+        let foundUnprocessed = false;
+        
+        while (nextElementIndex < pageData[`${nextElementType}s`].length) {
+          if (!isElementProcessed(nextElementType, nextElementIndex)) {
+            foundUnprocessed = true;
+            break;
+          }
+          nextElementIndex++;
+        }
+        
+        // If we've processed all elements of this type, go to next type
+        if (!foundUnprocessed || nextElementIndex >= pageData[`${nextElementType}s`].length) {
+          let found = false;
+          for (const type of elementTypes) {
+            if (processed[`${type}s`] < pageData[`${type}s`].length) {
+              nextElementType = type;
+              nextElementIndex = processed[`${type}s`];
+              found = true;
+              break;
+            }
+          }
+          
+          if (!found) {
+            typesExhausted++;
+            continue;
+          }
+        }
+        
         // Get element
-        const element = pageData[`${currentElementType}s`][currentElementIndex];
+        const element = pageData[`${nextElementType}s`][nextElementIndex];
+        
+        // Skip if already processed
+        if (isElementProcessed(nextElementType, nextElementIndex)) {
+          nextElementIndex++;
+          continue;
+        }
         
         // Generate test case based on element type
-        switch (currentElementType) {
+        let testCase;
+        
+        switch (nextElementType) {
           case 'button':
-            testCase = generateButtonTest(pageData.url, element, currentElementIndex);
-            processed.buttons++;
+            testCase = generateButtonTest(pageData.url, element, nextElementIndex);
             break;
           case 'form':
-            testCase = generateFormTest(pageData.url, element, currentElementIndex);
-            processed.forms++;
+            testCase = generateFormTest(pageData.url, element, nextElementIndex);
             break;
           case 'link':
-            testCase = generateLinkTest(pageData.url, element, currentElementIndex);
-            processed.links++;
+            testCase = generateLinkTest(pageData.url, element, nextElementIndex);
             break;
           case 'input':
-            testCase = generateInputTest(pageData.url, element, currentElementIndex);
-            processed.inputs++;
+            testCase = generateInputTest(pageData.url, element, nextElementIndex);
             break;
         }
         
         if (testCase) {
+          // Mark element as processed
+          processedElements.add(`${nextElementType}-${nextElementIndex}`);
+          processed[`${nextElementType}s`]++;
+          
+          // Add test case
           newTestCases.push(testCase);
           session.testCases.push(testCase);
+          remainingBatchSize--;
+        }
+        
+        // Move to next element
+        nextElementIndex++;
+        
+        // If we've processed all elements of this type, we'll pick a new type on next iteration
+        if (nextElementIndex >= pageData[`${nextElementType}s`].length) {
+          nextElementType = null;
         }
       }
       
       // Check if there are more elements to process
       hasMoreElements = 
-        processed.buttons < pageData.buttons.length || 
-        processed.forms < pageData.forms.length || 
-        processed.links < pageData.links.length || 
-        processed.inputs < pageData.inputs.length;
+        elementTypes.some(type => 
+          pageData[`${type}s`].some((element, index) => 
+            !isElementProcessed(type, index)
+          )
+        );
       
       // Determine next element type and index for next batch
       if (hasMoreElements) {
-        if (processed.buttons < pageData.buttons.length) {
-          nextElementType = 'button';
-          nextElementIndex = processed.buttons;
-        } else if (processed.forms < pageData.forms.length) {
-          nextElementType = 'form';
-          nextElementIndex = processed.forms;
-        } else if (processed.links < pageData.links.length) {
-          nextElementType = 'link';
-          nextElementIndex = processed.links;
-        } else if (processed.inputs < pageData.inputs.length) {
-          nextElementType = 'input';
-          nextElementIndex = processed.inputs;
+        let foundNext = false;
+        
+        // Find the next unprocessed element
+        for (const type of elementTypes) {
+          for (let i = 0; i < pageData[`${type}s`].length; i++) {
+            if (!isElementProcessed(type, i)) {
+              nextElementType = type;
+              nextElementIndex = i;
+              foundNext = true;
+              break;
+            }
+          }
+          if (foundNext) break;
         }
+      } else {
+        nextElementType = null;
+        nextElementIndex = 0;
       }
       
       console.log(`Generated ${newTestCases.length} new test cases. More elements: ${hasMoreElements}`);
@@ -357,11 +474,78 @@ module.exports = async (req, res) => {
   }
 };
 
+/**
+ * Helper function to get parent context of an element
+ * @param {CheerioStatic} $ - Cheerio instance
+ * @param {CheerioElement} el - Element to get context for
+ * @returns {string} - Context string
+ */
+function getParentContext($, el) {
+  const $el = $(el);
+  
+  // Look for parent section with heading
+  let $section = $el.closest('section, article, div.section, [role="region"], .card, .package, .product');
+  
+  if ($section.length > 0) {
+    // Try to get heading
+    const $heading = $section.find('h1, h2, h3, h4, h5, h6').first();
+    if ($heading.length > 0) {
+      return $heading.text().trim();
+    }
+    
+    // Try to get a class name that might indicate purpose
+    const className = $section.attr('class');
+    if (className) {
+      const matches = className.match(/(?:section|block|container|panel|card|module)-([a-zA-Z0-9_-]+)/);
+      if (matches && matches[1]) {
+        return capitalizeWords(matches[1].replace(/[-_]/g, ' '));
+      }
+    }
+  }
+  
+  // Look for parent with ID
+  const $parentWithId = $el.closest('[id]');
+  if ($parentWithId.length > 0) {
+    const id = $parentWithId.attr('id');
+    if (id && !id.match(/^[0-9]+$/)) {
+      return capitalizeWords(id.replace(/[-_]/g, ' '));
+    }
+  }
+  
+  // Try to extract from breadcrumbs
+  const $breadcrumbs = $('nav[aria-label="breadcrumb"], .breadcrumb, .breadcrumbs');
+  if ($breadcrumbs.length > 0) {
+    const $items = $breadcrumbs.find('li');
+    if ($items.length > 1) {
+      return $items.eq($items.length - 1).text().trim();
+    }
+  }
+  
+  // Default to generic context
+  return 'Page Content';
+}
+
+/**
+ * Capitalize words in a string
+ * @param {string} str - String to capitalize
+ * @returns {string} - Capitalized string
+ */
+function capitalizeWords(str) {
+  return str.replace(/\b\w/g, char => char.toUpperCase());
+}
+
 // Helper functions to generate different types of test cases
 
 function generateButtonTest(url, button, index) {
   const buttonText = button.text || button.id || 'Unnamed Button';
   const buttonType = button.type || 'button';
+  const buttonContext = button.context || 'Page';
+  
+  // Create specific title with context
+  let title = `Test Button: ${buttonText}`;
+  if (buttonContext && buttonContext !== 'Page Content' && !title.includes(buttonContext)) {
+    title = `Test ${buttonContext} Button: ${buttonText}`;
+  }
   
   // Generate expected result based on button text or type
   let expectedResult = 'Action is performed successfully';
@@ -388,24 +572,23 @@ function generateButtonTest(url, button, index) {
     expectedResult = 'Item is updated successfully';
   } else if (textLower.includes('close')) {
     expectedResult = 'Dialog or panel is closed';
-  } else if (textLower.includes('open')) {
-    expectedResult = 'Dialog or panel is opened';
-  } else if (textLower.includes('next')) {
-    expectedResult = 'User is navigated to the next step or page';
-  } else if (textLower.includes('previous') || textLower.includes('back')) {
-    expectedResult = 'User is navigated to the previous step or page';
-  } else if (textLower.includes('download')) {
-    expectedResult = 'File download begins';
-  } else if (textLower.includes('upload')) {
-    expectedResult = 'File upload dialog opens';
-  } else if (textLower.includes('send')) {
-    expectedResult = 'Message or data is sent successfully';
+  } else if (textLower.includes('select') || textLower.includes('choose')) {
+    expectedResult = `${buttonContext} is selected and highlighted`;
+  }
+  
+  // Context-specific expected results
+  if (buttonContext.toLowerCase().includes('package') || buttonContext.toLowerCase().includes('product')) {
+    if (textLower.includes('select')) {
+      expectedResult = `${buttonContext} is selected and added to cart/selection`;
+    } else if (textLower.includes('buy')) {
+      expectedResult = `Checkout process begins for ${buttonContext}`;
+    }
   }
   
   return {
     id: `TC_BTN_${index + 1}`,
-    title: `Test Button: ${buttonText}`,
-    description: `Verify that the ${buttonText} button works as expected`,
+    title: title,
+    description: `Verify that the ${buttonText} button in ${buttonContext} works as expected`,
     priority: 'Medium',
     steps: [
       {
@@ -415,7 +598,7 @@ function generateButtonTest(url, button, index) {
       },
       {
         step: 2,
-        action: `Locate the ${buttonText} button`,
+        action: `Locate the ${buttonText} button in the ${buttonContext} section`,
         expected: 'Button is visible on the page'
       },
       {
@@ -430,44 +613,57 @@ function generateButtonTest(url, button, index) {
 function generateFormTest(url, form, index) {
   const formId = form.id || `Form ${index + 1}`;
   const formMethod = form.method || 'post';
-  const formAction = form.action || '';
+  const formHeading = form.heading || '';
+  const formContext = form.context || 'Page Content';
   
-  // Try to determine form purpose from action or ID
+  // Create specific title
   let formPurpose = 'form';
+  let title = `Test Form: ${formId}`;
+  
+  if (formHeading) {
+    title = `Test Form: ${formHeading}`;
+    formPurpose = formHeading.toLowerCase();
+  } else if (formContext && formContext !== 'Page Content') {
+    title = `Test Form: ${formContext}`;
+    formPurpose = formContext.toLowerCase();
+  }
+  
+  // Try to determine form purpose from ID, context, or heading
   let expectedResult = 'Form submits successfully';
   
   const formIdLower = formId.toLowerCase();
-  const formActionLower = formAction.toLowerCase();
+  const formContextLower = formContext.toLowerCase();
+  const formHeadingLower = formHeading.toLowerCase();
   
-  if (formIdLower.includes('login') || formActionLower.includes('login')) {
+  if (formIdLower.includes('login') || formContextLower.includes('login') || formHeadingLower.includes('login')) {
     formPurpose = 'login form';
     expectedResult = 'User is logged in and redirected to appropriate page';
-  } else if (formIdLower.includes('register') || formActionLower.includes('register') || 
-             formIdLower.includes('signup') || formActionLower.includes('signup')) {
+  } else if (formIdLower.includes('register') || formContextLower.includes('register') || 
+             formIdLower.includes('signup') || formContextLower.includes('signup')) {
     formPurpose = 'registration form';
     expectedResult = 'User account is created and confirmation is shown';
-  } else if (formIdLower.includes('search') || formActionLower.includes('search')) {
+  } else if (formIdLower.includes('search') || formContextLower.includes('search')) {
     formPurpose = 'search form';
     expectedResult = 'Search results are displayed based on query';
-  } else if (formIdLower.includes('contact') || formActionLower.includes('contact')) {
+  } else if (formIdLower.includes('contact') || formContextLower.includes('contact')) {
     formPurpose = 'contact form';
     expectedResult = 'Message is sent and confirmation is shown';
-  } else if (formIdLower.includes('comment') || formActionLower.includes('comment')) {
+  } else if (formIdLower.includes('comment') || formContextLower.includes('comment')) {
     formPurpose = 'comment form';
     expectedResult = 'Comment is posted and displayed';
-  } else if (formIdLower.includes('checkout') || formActionLower.includes('checkout') ||
-             formIdLower.includes('payment') || formActionLower.includes('payment')) {
+  } else if (formIdLower.includes('checkout') || formContextLower.includes('checkout') ||
+             formIdLower.includes('payment') || formContextLower.includes('payment')) {
     formPurpose = 'payment form';
     expectedResult = 'Payment is processed and confirmation is shown';
-  } else if (formIdLower.includes('subscribe') || formActionLower.includes('subscribe') ||
-             formIdLower.includes('newsletter') || formActionLower.includes('newsletter')) {
+  } else if (formIdLower.includes('subscribe') || formContextLower.includes('subscribe') ||
+             formIdLower.includes('newsletter') || formContextLower.includes('newsletter')) {
     formPurpose = 'subscription form';
     expectedResult = 'Subscription is confirmed';
   }
   
   return {
     id: `TC_FORM_${index + 1}`,
-    title: `Test ${formPurpose.charAt(0).toUpperCase() + formPurpose.slice(1)}: ${formId}`,
+    title: title,
     description: `Verify that the ${formPurpose} submits correctly`,
     priority: 'High',
     steps: [
@@ -478,7 +674,7 @@ function generateFormTest(url, form, index) {
       },
       {
         step: 2,
-        action: `Locate the ${formPurpose} (${formId})`,
+        action: `Locate the ${formPurpose} in the ${formContext === 'Page Content' ? 'page' : formContext} section`,
         expected: 'Form is visible on the page'
       },
       {
@@ -498,51 +694,101 @@ function generateFormTest(url, form, index) {
 function generateLinkTest(url, link, index) {
   const linkText = link.text || 'Unnamed Link';
   const linkHref = link.href || '#';
+  const linkContext = link.context || 'Page Content';
+  const isNavLink = link.isNavLink;
+  const isFooterLink = link.isFooterLink;
   
-  // Generate expected result based on link href and text
+  // Create a more specific title with context
+  let title = `Test Link: ${linkText}`;
+  if (linkContext && linkContext !== 'Page Content' && !title.includes(linkContext)) {
+    if (isNavLink) {
+      title = `Test Navigation Link: ${linkText}`;
+    } else if (isFooterLink) {
+      title = `Test Footer Link: ${linkText}`;
+    } else {
+      title = `Test ${linkContext} Link: ${linkText}`;
+    }
+  }
+  
+  // Generate expected result based on link href, text, and context
   let expectedResult = 'User is navigated to the correct page';
   
   const textLower = linkText.toLowerCase();
   const hrefLower = linkHref.toLowerCase();
+  const contextLower = linkContext.toLowerCase();
   
-  if (hrefLower === '/' || hrefLower.includes('home') || textLower.includes('home')) {
-    expectedResult = 'User is navigated to the home page';
-  } else if (hrefLower.includes('about') || textLower.includes('about')) {
-    expectedResult = 'User is navigated to the About page';
-  } else if (hrefLower.includes('contact') || textLower.includes('contact')) {
-    expectedResult = 'User is navigated to the Contact page';
-  } else if (hrefLower.includes('product') || textLower.includes('product')) {
-    expectedResult = 'User is navigated to the Products page';
-  } else if (hrefLower.includes('service') || textLower.includes('service')) {
-    expectedResult = 'User is navigated to the Services page';
-  } else if (hrefLower.includes('blog') || textLower.includes('blog') || 
-             hrefLower.includes('news') || textLower.includes('news')) {
-    expectedResult = 'User is navigated to the Blog/News page';
-  } else if (hrefLower.includes('faq') || textLower.includes('faq')) {
-    expectedResult = 'User is navigated to the FAQ page';
-  } else if (hrefLower.includes('login') || textLower.includes('login') ||
-             hrefLower.includes('sign-in') || textLower.includes('sign in')) {
-    expectedResult = 'User is navigated to the login page';
-  } else if (hrefLower.includes('register') || textLower.includes('register') ||
-             hrefLower.includes('sign-up') || textLower.includes('sign up')) {
-    expectedResult = 'User is navigated to the registration page';
-  } else if (hrefLower.startsWith('#')) {
-    expectedResult = 'Page scrolls to the appropriate section';
-  } else if (hrefLower.startsWith('mailto:')) {
-    expectedResult = 'Email client opens with the recipient address';
-  } else if (hrefLower.startsWith('tel:')) {
-    expectedResult = 'Phone dialer opens with the correct number';
-  } else if (hrefLower.includes('.pdf') || hrefLower.includes('.doc') || 
-             hrefLower.includes('.xls') || hrefLower.includes('.zip')) {
-    expectedResult = 'File download begins';
-  } else if (hrefLower.startsWith('http') && !hrefLower.includes(url.replace(/https?:\/\//, ''))) {
-    expectedResult = 'User is navigated to external website';
+  // First check context + text combinations for most specific results
+  if (contextLower.includes('package') || contextLower.includes('product') || contextLower.includes('pricing')) {
+    if (textLower.includes('learn more') || textLower.includes('details')) {
+      expectedResult = `Detailed information about the ${linkContext} is displayed`;
+    } else if (textLower.includes('select') || textLower.includes('choose')) {
+      expectedResult = `${linkContext} is selected and added to cart/selection`;
+    } else if (textLower.includes('buy') || textLower.includes('purchase')) {
+      expectedResult = `Checkout process begins for ${linkContext}`;
+    }
+  } else if (contextLower.includes('navigation') || isNavLink) {
+    expectedResult = `User is navigated to the ${linkText} section/page`;
+  } else if (contextLower.includes('footer') || isFooterLink) {
+    if (textLower.includes('terms') || textLower.includes('privacy') || textLower.includes('policy')) {
+      expectedResult = `User is navigated to the ${linkText} page`;
+    } else if (textLower.includes('contact')) {
+      expectedResult = 'User is navigated to the Contact page';
+    }
+  }
+  
+  // If not yet determined by context, check URL structure
+  if (expectedResult === 'User is navigated to the correct page') {
+    if (hrefLower === '/' || hrefLower.includes('home') || textLower.includes('home')) {
+      expectedResult = 'User is navigated to the home page';
+    } else if (hrefLower.includes('about') || textLower.includes('about')) {
+      expectedResult = 'User is navigated to the About page';
+    } else if (hrefLower.includes('contact') || textLower.includes('contact')) {
+      expectedResult = 'User is navigated to the Contact page';
+    } else if (hrefLower.includes('product') || textLower.includes('product')) {
+      expectedResult = 'User is navigated to the Products page';
+    } else if (hrefLower.includes('service') || textLower.includes('service')) {
+      expectedResult = 'User is navigated to the Services page';
+    } else if (hrefLower.includes('blog') || textLower.includes('blog') || 
+              hrefLower.includes('news') || textLower.includes('news')) {
+      expectedResult = 'User is navigated to the Blog/News page';
+    } else if (hrefLower.includes('faq') || textLower.includes('faq')) {
+      expectedResult = 'User is navigated to the FAQ page';
+    } else if (hrefLower.includes('login') || textLower.includes('login') ||
+              hrefLower.includes('sign-in') || textLower.includes('sign in')) {
+      expectedResult = 'User is navigated to the login page';
+    } else if (hrefLower.includes('register') || textLower.includes('register') ||
+              hrefLower.includes('sign-up') || textLower.includes('sign up')) {
+      expectedResult = 'User is navigated to the registration page';
+    } else if (hrefLower.startsWith('#')) {
+      expectedResult = 'Page scrolls to the appropriate section';
+    } else if (hrefLower.startsWith('mailto:')) {
+      expectedResult = 'Email client opens with the recipient address';
+    } else if (hrefLower.startsWith('tel:')) {
+      expectedResult = 'Phone dialer opens with the correct number';
+    } else if (hrefLower.includes('.pdf') || hrefLower.includes('.doc') || 
+              hrefLower.includes('.xls') || hrefLower.includes('.zip')) {
+      expectedResult = 'File download begins';
+    } else if (hrefLower.startsWith('http') && !hrefLower.includes(url.replace(/https?:\/\//, ''))) {
+      expectedResult = 'User is navigated to external website';
+    }
+  }
+  
+  // Get section description based on context
+  let sectionDescription;
+  if (isNavLink) {
+    sectionDescription = 'navigation menu';
+  } else if (isFooterLink) {
+    sectionDescription = 'footer';
+  } else if (linkContext && linkContext !== 'Page Content') {
+    sectionDescription = `${linkContext} section`;
+  } else {
+    sectionDescription = 'page';
   }
   
   return {
     id: `TC_LINK_${index + 1}`,
-    title: `Test Link: ${linkText}`,
-    description: `Verify that the ${linkText} link navigates correctly`,
+    title: title,
+    description: `Verify that the ${linkText} link in the ${sectionDescription} navigates correctly`,
     priority: 'Medium',
     steps: [
       {
@@ -552,7 +798,7 @@ function generateLinkTest(url, link, index) {
       },
       {
         step: 2,
-        action: `Locate the ${linkText} link`,
+        action: `Locate the ${linkText} link in the ${sectionDescription}`,
         expected: 'Link is visible on the page'
       },
       {
@@ -567,7 +813,19 @@ function generateLinkTest(url, link, index) {
 function generateInputTest(url, input, index) {
   const inputType = input.type || 'text';
   const inputName = input.name || input.id || `Input ${index + 1}`;
+  const inputLabel = input.label || '';
   const inputPlaceholder = input.placeholder || '';
+  const inputContext = input.context || 'Page Content';
+  const isRequired = input.isRequired;
+  
+  // Get the most descriptive name for the input
+  const inputDescription = inputLabel || inputPlaceholder || inputName;
+  
+  // Create specific title with context
+  let title = `Test ${inputType.charAt(0).toUpperCase() + inputType.slice(1)} Input: ${inputDescription}`;
+  if (inputContext && inputContext !== 'Page Content' && !title.includes(inputContext)) {
+    title = `Test ${inputContext} ${inputType} Input: ${inputDescription}`;
+  }
   
   // Try to determine input purpose from attributes
   let inputPurpose = inputType;
@@ -575,7 +833,9 @@ function generateInputTest(url, input, index) {
   let validationCheck = 'Input accepts the entered data';
   
   const inputNameLower = inputName.toLowerCase();
+  const inputLabelLower = inputLabel.toLowerCase();
   const placeholderLower = inputPlaceholder.toLowerCase();
+  const contextLower = inputContext.toLowerCase();
   
   // Field specific test data and validation
   switch (inputType) {
@@ -615,47 +875,53 @@ function generateInputTest(url, input, index) {
       break;
       
     default:
-      // Try to determine field purpose from name/placeholder
-      if (inputNameLower.includes('email') || placeholderLower.includes('email')) {
+      // Try to determine field purpose from name/placeholder/label/context
+      if (inputNameLower.includes('email') || inputLabelLower.includes('email') || placeholderLower.includes('email')) {
         inputPurpose = 'email';
         testData = 'test@example.com';
         validationCheck = 'Email format is validated correctly';
-      } else if (inputNameLower.includes('name') || placeholderLower.includes('name')) {
+      } else if (inputNameLower.includes('name') || inputLabelLower.includes('name') || placeholderLower.includes('name')) {
         inputPurpose = 'name';
         testData = 'John Doe';
         validationCheck = 'Name is accepted correctly';
-      } else if (inputNameLower.includes('phone') || placeholderLower.includes('phone') ||
-                inputNameLower.includes('tel') || placeholderLower.includes('tel')) {
+      } else if (inputNameLower.includes('phone') || inputLabelLower.includes('phone') || placeholderLower.includes('phone') ||
+                inputNameLower.includes('tel') || inputLabelLower.includes('tel') || placeholderLower.includes('tel')) {
         inputPurpose = 'phone number';
         testData = '(555) 123-4567';
         validationCheck = 'Phone number is accepted correctly';
-      } else if (inputNameLower.includes('address') || placeholderLower.includes('address')) {
+      } else if (inputNameLower.includes('address') || inputLabelLower.includes('address') || placeholderLower.includes('address')) {
         inputPurpose = 'address';
         testData = '123 Main St';
         validationCheck = 'Address is accepted correctly';
-      } else if (inputNameLower.includes('search') || placeholderLower.includes('search')) {
+      } else if (inputNameLower.includes('search') || inputLabelLower.includes('search') || placeholderLower.includes('search') ||
+                contextLower.includes('search')) {
         inputPurpose = 'search';
         testData = 'search query';
         validationCheck = 'Search query is accepted correctly';
-      } else if (inputNameLower.includes('zip') || placeholderLower.includes('zip') ||
-                inputNameLower.includes('postal') || placeholderLower.includes('postal')) {
+      } else if (inputNameLower.includes('zip') || inputLabelLower.includes('zip') || placeholderLower.includes('zip') ||
+                inputNameLower.includes('postal') || inputLabelLower.includes('postal') || placeholderLower.includes('postal')) {
         inputPurpose = 'postal code';
         testData = '12345';
         validationCheck = 'Postal code is accepted correctly';
       }
   }
   
+  // Enhance validation check based on required status
+  if (isRequired) {
+    validationCheck += ' and is properly marked as required';
+  }
+  
   let actionStep;
   if (inputType === 'checkbox' || inputType === 'radio') {
-    actionStep = `Click the ${inputName} ${inputType}`;
+    actionStep = `Click the ${inputDescription} ${inputType}`;
   } else {
-    actionStep = `Enter "${testData}" into the ${inputName} field`;
+    actionStep = `Enter "${testData}" into the ${inputDescription} field`;
   }
   
   return {
     id: `TC_INPUT_${index + 1}`,
-    title: `Test ${inputPurpose.charAt(0).toUpperCase() + inputPurpose.slice(1)} Input: ${inputName}`,
-    description: `Verify that the ${inputName} input field works correctly`,
+    title: title,
+    description: `Verify that the ${inputDescription} input field in ${inputContext} works correctly`,
     priority: inputType === 'password' || inputType === 'email' ? 'High' : 'Medium',
     steps: [
       {
@@ -665,7 +931,7 @@ function generateInputTest(url, input, index) {
       },
       {
         step: 2,
-        action: `Locate the ${inputName} field`,
+        action: `Locate the ${inputDescription} field in the ${inputContext === 'Page Content' ? 'page' : inputContext} section`,
         expected: 'Input field is visible on the page'
       },
       {
