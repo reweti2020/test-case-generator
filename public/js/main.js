@@ -1,5 +1,6 @@
 /**
  * Main JavaScript file for Test Case Generator
+ * Fixed version with debugging functionality
  */
 document.addEventListener('DOMContentLoaded', function() {
   // Add promotional banner
@@ -82,6 +83,9 @@ document.addEventListener('DOMContentLoaded', function() {
     // Initialize correction UI
     initCorrectionUI();
     
+    // Initialize debug tools
+    initDebugTools();
+    
     // Update button text for batch generation
     if (elements.generateNextTest) {
       elements.generateNextTest.textContent = 'Generate 5 More Tests';
@@ -157,6 +161,76 @@ document.addEventListener('DOMContentLoaded', function() {
   }
   
   /**
+   * Initialize the debug tools functionality
+   */
+  function initDebugTools() {
+    // Debug mode toggle
+    const debugModeCheckbox = document.getElementById('debug-mode');
+    if (debugModeCheckbox) {
+      debugModeCheckbox.addEventListener('change', function() {
+        const debugSection = document.getElementById('debug-section');
+        if (debugSection) {
+          debugSection.style.display = this.checked ? 'block' : 'none';
+        }
+      });
+    }
+    
+    // Debug button click
+    const runDebugButton = document.getElementById('run-debug');
+    if (runDebugButton) {
+      runDebugButton.addEventListener('click', async function() {
+        const debugResults = document.getElementById('debug-results');
+        const debugSelector = document.getElementById('debug-selector');
+        
+        if (!debugResults || !debugSelector) return;
+        
+        // Get the current URL from the state rather than directly accessing urlInput
+        const url = state.currentUrl;
+        if (!url) {
+          debugResults.innerHTML = '<p class="error">❌ Please enter a URL in the main form first</p>';
+          return;
+        }
+        
+        // Show loading state
+        debugResults.innerHTML = '<div class="spinner"></div><p>Analyzing elements...</p>';
+        
+        try {
+          const response = await fetch('/api/debug-element', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              url: url,
+              selector: debugSelector.value.trim()
+            })
+          });
+          
+          if (!response.ok) {
+            throw new Error(`Server responded with status: ${response.status}`);
+          }
+          
+          const data = await response.json();
+          
+          if (data.success) {
+            // Format the results nicely
+            let resultsHTML = `<p>Found ${data.results.length} element(s) matching "${data.selector}" on ${data.url}</p><pre>`;
+            data.results.forEach((element, index) => {
+              resultsHTML += `\n[${index}] ${element.tagName}: ${element.content || 'No content'}\n`;
+              resultsHTML += `    Attributes: ${JSON.stringify(element.attributes, null, 2)}\n`;
+            });
+            resultsHTML += '</pre>';
+            
+            debugResults.innerHTML = resultsHTML;
+          } else {
+            debugResults.innerHTML = `<p class="error">❌ ${data.error || 'Unknown error'}</p>`;
+          }
+        } catch (error) {
+          debugResults.innerHTML = `<p class="error">❌ Debug API error: ${error.message || 'Unknown error'}</p>`;
+        }
+      });
+    }
+  }
+  
+  /**
    * Update UI elements based on user plan
    */
   function updateUiForUserPlan() {
@@ -204,59 +278,6 @@ document.addEventListener('DOMContentLoaded', function() {
     }
     
     state.currentUrl = url;
-    // Near the top of the handleFormSubmit function
-// Check for debug mode
-const debugMode = document.getElementById('debug-mode')?.checked;
-if (debugMode) {
-  console.log('Debug mode enabled, using simplified API');
-  
-  // Show loading state
-  setLoading(true);
-  elements.output.innerHTML = '<p>Analyzing website in debug mode...</p>';
-  
-  try {
-    const response = await fetch('/api/test-debug', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        url: urlInput.value.trim(),
-        format: formatSelect ? formatSelect.value : 'plain'
-      })
-    });
-    
-    const data = await response.json();
-    console.log('Debug response:', data);
-    
-    if (data.success) {
-      // Update state with debug data
-      state.pageData = data.pageData;
-      state.processed = data.processed;
-      state.testCases = data.testCases || [];
-      state.hasMoreElements = data.hasMoreElements || false;
-      
-      // Render test cases
-      renderTestCases(data.testCases);
-      
-      if (elements.downloadContainer) {
-        elements.downloadContainer.style.display = 'block';
-      }
-    } else {
-      // Show error with details
-      elements.output.innerHTML = `
-        <p class="error">❌ Debug Error: ${data.errorMessage || 'Unknown error'}</p>
-        <p>Error details: ${data.errorCode || ''} ${data.errorName || ''}</p>
-        <pre>${data.errorStack || ''}</pre>
-      `;
-    }
-    
-    setLoading(false);
-    return; // Exit the function early
-  } catch (error) {
-    showError(`Debug API error: ${error.message}`);
-    setLoading(false);
-    return;
-  }
-}
     
     // Show loading state
     setLoading(true);
@@ -346,36 +367,36 @@ if (debugMode) {
     }
   }
   
-/**
- * Handle "Generate Next Test" button click
- */
-async function handleGenerateNextTest() {
-  if (!state.hasMoreElements || !state.pageData || !state.processed) {
-    showError('Missing page data or no more elements to test');
-    return;
-  }
-  
-  // Show loading state
-  setLoading(true);
-  
-  try {
-    // Ensure we have formatSelect
-    const format = elements.formatSelect ? elements.formatSelect.value : 'plain';
+  /**
+   * Handle "Generate Next Test" button click
+   */
+  async function handleGenerateNextTest() {
+    if (!state.hasMoreElements || !state.pageData || !state.processed) {
+      showError('Missing page data or no more elements to test');
+      return;
+    }
     
-    const response = await fetch('/api/generate-incremental', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        mode: 'next',
-        pageData: state.pageData,
-        processed: state.processed,
-        elementType: state.nextElementType,
-        elementIndex: state.nextElementIndex,
-        format: format,
-        batchSize: 5  // Request 5 tests at once
-      })
-    });
+    // Show loading state
+    setLoading(true);
+    
+    try {
+      // Ensure we have formatSelect
+      const format = elements.formatSelect ? elements.formatSelect.value : 'plain';
       
+      const response = await fetch('/api/generate-incremental', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          mode: 'next',
+          pageData: state.pageData,
+          processed: state.processed,
+          elementType: state.nextElementType,
+          elementIndex: state.nextElementIndex,
+          format: format,
+          batchSize: 5  // Request 5 tests at once
+        })
+      });
+        
       if (!response.ok) {
         throw new Error(`Server responded with status: ${response.status}`);
       }
