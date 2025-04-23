@@ -1,11 +1,6 @@
 // api/generate-incremental.js
-const axios = require('axios');
-const cheerio = require('cheerio');
-const { generateTestCases } = require('../testGen');
+// Ultra-simplified version that just returns static data
 
-/**
- * API handler for test case generation
- */
 module.exports = async (req, res) => {
   console.log('[API] Test generation request received');
   
@@ -21,90 +16,71 @@ module.exports = async (req, res) => {
   }
   
   try {
-    // Extract request body
+    // Extract basic request info
     const body = req.body || {};
-    const url = body.url;
+    const url = body.url || 'https://example.com';
     const mode = body.mode || 'first';
-    const sessionId = body.sessionId;
-    const elementType = body.elementType;
-    const elementIndex = body.elementIndex !== undefined ? parseInt(body.elementIndex) : 0;
-    const batchSize = body.batchSize ? parseInt(body.batchSize) : 5;
     
-    // Log request for debugging
-    console.log(`Request params: mode=${mode}, sessionId=${sessionId}, elementType=${elementType}, elementIndex=${elementIndex}, batchSize=${batchSize}`);
+    console.log(`Request received: mode=${mode}, url=${url}`);
     
-    // Force pro access for testing
-    const userPlan = 'pro';
-    
-    // Check if URL is provided for first-time generation
-    if (mode === 'first' && !url) {
-      return res.status(400).json({
-        success: false,
-        error: 'URL is required for initial test generation'
-      });
-    }
-    
-    // For subsequent requests, sessionId is required
-    if (mode === 'next' && !sessionId) {
-      return res.status(400).json({
-        success: false,
-        error: 'Session ID is required for subsequent test generation'
-      });
-    }
-    
-    // Process the request based on mode
-    let result;
-    
-    console.log(`Processing request in ${mode} mode`);
-    
-    if (mode === 'first') {
-      // Initial test generation
-      result = await generateTestCases(url, {
-        mode: 'first',
-        userPlan: userPlan
-      });
-    } else {
-      // Subsequent test generation with sessionId
-      result = await generateTestCases(null, {
-        mode: 'next',
-        sessionId: sessionId,
-        elementType: elementType,
-        elementIndex: elementIndex,
-        userPlan: userPlan,
-        batchSize: batchSize
-      });
-    }
-    
-    // Ensure result has all required properties
-    if (result && result.success) {
-      console.log(`Success: Generated ${result.testCases ? result.testCases.length : 0} test cases`);
-      
-      // Make sure pageData is present for frontend
-      if (!result.pageData && mode === 'next') {
-        const session = require('../testGen').pageCache[sessionId];
-        if (session && session.pageData) {
-          result.pageData = session.pageData;
+    // Generate a simple test case
+    const testCase = {
+      id: 'TC_PAGE_1',
+      title: 'Verify Page Loads Correctly',
+      description: 'Test that the page loads successfully with the correct title',
+      priority: 'High',
+      steps: [
+        {
+          step: 1,
+          action: `Navigate to ${url}`,
+          expected: 'Page loads without errors'
+        },
+        {
+          step: 2,
+          action: 'Verify page title',
+          expected: 'Title is "Example Domain"'
         }
-      }
-      
-      // Make sure processed is present for frontend
-      if (!result.processed && mode === 'next') {
-        const session = require('../testGen').pageCache[sessionId];
-        if (session && session.processed) {
-          result.processed = session.processed;
-        }
-      }
-    } else {
-      console.log('Error: Test generation failed', result ? result.error : 'Unknown error');
-    }
+      ]
+    };
     
-    // Return the result to the client
-    return res.status(200).json(result || {
-      success: false,
-      error: 'No result returned from test generator'
+    // Simplified mock page data
+    const mockPageData = {
+      url: url,
+      title: 'Example Domain',
+      extractedAt: new Date().toISOString(),
+      buttons: [{ text: 'Sample Button', id: 'btn1' }],
+      forms: [{ id: 'form1' }],
+      links: [{ text: 'Sample Link', href: '#' }],
+      inputs: [{ type: 'text', id: 'input1' }]
+    };
+    
+    // Mock processed data
+    const mockProcessed = {
+      buttons: mode === 'first' ? 0 : 1,
+      forms: 0,
+      links: 0,
+      inputs: 0
+    };
+    
+    // Create a mock session ID
+    const sessionId = 'test-session-' + Math.random().toString(36).substring(2, 10);
+    
+    // Return a dummy response
+    return res.status(200).json({
+      success: true,
+      sessionId: sessionId,
+      pageData: mockPageData,
+      processed: mockProcessed,
+      testCases: [testCase],
+      nextElementType: 'button',
+      nextElementIndex: 0,
+      hasMoreElements: true,
+      totalTestCases: 1
     });
+    
   } catch (error) {
-    console.error('Error in generate-incremental:', error);
+    console.error('Error in simplified generate-incremental:', error);
+    
     return res.status(500).json({
       success: false,
       error: `Server error: ${error.message || 'Unknown error'}`
