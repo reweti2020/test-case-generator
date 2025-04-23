@@ -204,6 +204,59 @@ document.addEventListener('DOMContentLoaded', function() {
     }
     
     state.currentUrl = url;
+    // Near the top of the handleFormSubmit function
+// Check for debug mode
+const debugMode = document.getElementById('debug-mode')?.checked;
+if (debugMode) {
+  console.log('Debug mode enabled, using simplified API');
+  
+  // Show loading state
+  setLoading(true);
+  elements.output.innerHTML = '<p>Analyzing website in debug mode...</p>';
+  
+  try {
+    const response = await fetch('/api/test-debug', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        url: urlInput.value.trim(),
+        format: formatSelect ? formatSelect.value : 'plain'
+      })
+    });
+    
+    const data = await response.json();
+    console.log('Debug response:', data);
+    
+    if (data.success) {
+      // Update state with debug data
+      state.pageData = data.pageData;
+      state.processed = data.processed;
+      state.testCases = data.testCases || [];
+      state.hasMoreElements = data.hasMoreElements || false;
+      
+      // Render test cases
+      renderTestCases(data.testCases);
+      
+      if (elements.downloadContainer) {
+        elements.downloadContainer.style.display = 'block';
+      }
+    } else {
+      // Show error with details
+      elements.output.innerHTML = `
+        <p class="error">❌ Debug Error: ${data.errorMessage || 'Unknown error'}</p>
+        <p>Error details: ${data.errorCode || ''} ${data.errorName || ''}</p>
+        <pre>${data.errorStack || ''}</pre>
+      `;
+    }
+    
+    setLoading(false);
+    return; // Exit the function early
+  } catch (error) {
+    showError(`Debug API error: ${error.message}`);
+    setLoading(false);
+    return;
+  }
+}
     
     // Show loading state
     setLoading(true);
