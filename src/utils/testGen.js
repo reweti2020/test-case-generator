@@ -18,23 +18,8 @@ async function generateTestCases(url, options = {}) {
     elementType = 'button', 
     elementIndex = 0, 
     userPlan = 'free',
-    batchSize = 5,
-    pageData = null,
-    processed = null
+    batchSize = 5
   } = options;
-  
-  // For subsequent calls using stateless approach
-  if (mode === 'next' && pageData && processed) {
-    try {
-      return generateNextTestStateless(pageData, processed, elementType, elementIndex, userPlan, batchSize);
-    } catch (error) {
-      console.error('Error generating next test:', error);
-      return { 
-        success: false, 
-        error: `Error generating next test: ${error.message}`
-      };
-    }
-  }
   
   // For subsequent calls, use cached page data if available
   if (mode === 'next' && sessionId && pageCache[sessionId]) {
@@ -49,332 +34,245 @@ async function generateTestCases(url, options = {}) {
     }
   }
   
-  // First-time call logic (analyzing website)
+// First-time call logic (analyzing website)
+try {
+  console.log(`Fetching URL: ${url}`);
+  
+  // Validate URL format first
+  if (!url.match(/^https?:\/\//i)) {
+    url = 'https://' + url;
+    console.log(`Added protocol to URL: ${url}`);
+  }
+  
+  // Fetch the HTML content with a timeout and better error handling
+  const response = await axios.get(url, {
+    timeout: 15000, // Increased timeout for larger sites
+    headers: {
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+      'Accept': 'text/html,application/xhtml+xml,application/xml',
+      'Accept-Language': 'en-US,en;q=0.9'
+    },
+    maxRedirects: 5,
+    validateStatus: status => status < 500 // Accept all statuses under 500
+  }).catch(error => {
+    console.error('Error fetching URL:', error.message);
+    // Return a structured error response
+    if (error.code === 'ECONNABORTED') {
+      throw new Error('Request timed out. The website may be too large or slow to respond.');
+    } else if (error.response && error.response.status) {
+      throw new Error(`Server responded with status code ${error.response.status}`);
+    } else {
+      throw new Error(`Failed to fetch URL: ${error.message}`);
+    }
+  });
+    
+  // Check response status
+  if (!response || response.status !== 200) {
+    return {
+      success: false,
+      error: `Failed to fetch URL (Status ${response?.status || 'unknown'})`
+    };
+  }
+    
+  console.log('URL fetched successfully, parsing HTML...');
+  
+  // Safety check for response data
+  if (!response.data) {
+    return {
+      success: false,
+      error: 'Empty response from server'
+    };
+  }
+    
+  // Load HTML into cheerio with decodeEntities option to handle character encoding issues
+  let $ = null;
   try {
-    console.log(`Fetching URL: ${url}`);
-    
-    // Validate URL format first
-    if (!url.match(/^https?:\/\//i)) {
-      url = 'https://' + url;
-      console.log(`Added protocol to URL: ${url}`);
-    }
-    
-    // Fetch the HTML content with a timeout and better error handling
-    const response = await axios.get(url, {
-      timeout: 6000, // Reduced timeout for serverless environment 
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
-        'Accept': 'text/html,application/xhtml+xml,application/xml',
-        'Accept-Language': 'en-US,en;q=0.9'
-      },
-      maxContentLength: 1024 * 1024, // Limit to 1MB
-      validateStatus: status => status < 500 // Accept all statuses under 500
-    });
-    
-    // Check response status
-    if (response.status !== 200) {
-      return {
-        success: false,
-        error: `Failed to fetch URL (Status ${response.status})`
-      };
-    }
-    
-    console.log('URL fetched successfully, parsing HTML...');
-    
-    // Load HTML into cheerio with decodeEntities option to handle character encoding issues
-    const $ = cheerio.load(response.data, {
+    $ = cheerio.load(response.data, {
       decodeEntities: true,
       normalizeWhitespace: false
     });
-    
-    // Extract basic page data
-    const pageData = {
-      url,
-      title: $('title').text().trim() || 'Unknown Title',
-      extractedAt: new Date().toISOString()
-    };
-
-    // Extract elements more efficiently
-    // Extract buttons - limit to first 20 for performance
-    pageData.buttons = [];
-    $('button, input[type="submit"], input[type="button"], .btn, [role="button"]').slice(0, 20).each((i, el) => {
-      const $el = $(el);
-      pageData.buttons.push({
-        text: $el.text().trim() || $el.val() || 'Unnamed Button',
-        type: $el.attr('type') || 'button',
-        id: $el.attr('id') || '',
-        name: $el.attr('name') || '',
-        class: $el.attr('class') || ''
-      });
-    });
-
-    // Extract forms - limit to first 10
-    pageData.forms = [];
-    $('form').slice(0, 10).each((i, el) => {
-      const $form = $(el);
-      pageData.forms.push({
-        id: $form.attr('id') || '',
-        action: $form.attr('action') || '',
-        method: $form.attr('method') || ''
-      });
-    });
-
-    // Extract links - limit to first 15
-    pageData.links = [];
-    $('a[href]').slice(0, 15).each((i, el) => {
-      const $link = $(el);
-      pageData.links.push({
-        text: $link.text().trim() || 'Unnamed Link',
-        href: $link.attr('href') || '',
-        id: $link.attr('id') || ''
-      });
-    });
-
-    // Extract inputs - limit to first 15
-    pageData.inputs = [];
-    $('input[type!="submit"][type!="button"], textarea, select').slice(0, 15).each((i, el) => {
-      const $input = $(el);
-      pageData.inputs.push({
-        type: $input.attr('type') || 'text',
-        id: $input.attr('id') || '',
-        name: $input.attr('name') || '',
-        placeholder: $input.attr('placeholder') || ''
-      });
-    });
-
-    console.log('HTML parsed successfully, creating session...');
-
-    // Generate a session ID and store page data
-    const newSessionId = Math.random().toString(36).substring(2, 15);
-    pageCache[newSessionId] = {
-      pageData,
-      processed: {
-        buttons: 0,
-        forms: 0,
-        links: 0, 
-        inputs: 0
-      },
-      hasMore: {
-        buttons: pageData.buttons.length > 0,
-        forms: pageData.forms.length > 0,
-        links: pageData.links.length > 0,
-        inputs: pageData.inputs.length > 0
-      },
-      testCases: []
-    };
-    
-    // Generate first test (always page verification)
-    const firstTest = {
-      id: 'TC_PAGE_1',
-      title: `Verify ${pageData.title || 'Page'} Loads Correctly`,
-      description: `Test that the page loads successfully with the correct title`,
-      priority: 'High',
-      steps: [
-        {
-          step: 1,
-          action: `Navigate to ${url}`,
-          expected: 'Page loads without errors'
-        },
-        {
-          step: 2,
-          action: 'Verify page title',
-          expected: `Title is "${pageData.title || 'Expected Title'}"`
-        }
-      ]
-    };
-    
-    // Add the test case to the cache
-    pageCache[newSessionId].testCases.push(firstTest);
-    
-    // Determine next element to test
-    const nextElementType = pageData.buttons.length > 0 ? 'button' : 
-                     (pageData.forms.length > 0 ? 'form' : 
-                     (pageData.inputs.length > 0 ? 'input' : 
-                     (pageData.links.length > 0 ? 'link' : null)));
-    
-    // Check test case limits for free plan users
-    const freeLimit = 10;
-    const hasMoreElements = (userPlan !== 'free' || pageCache[newSessionId].testCases.length < freeLimit) && 
-                      (pageData.buttons.length > 0 || pageData.forms.length > 0 || 
-                       pageData.links.length > 0 || pageData.inputs.length > 0);
-    
-    console.log('First test case generated successfully');
-    
-    // Return first test with session info
-    return { 
-      success: true, 
-      sessionId: newSessionId,
-      pageData: pageData,
-      processed: {
-        buttons: 0,
-        forms: 0,
-        links: 0, 
-        inputs: 0
-      },
-      testCases: [firstTest],
-      nextElementType,
-      nextElementIndex: 0,
-      hasMoreElements,
-      totalTestCases: pageCache[newSessionId].testCases.length,
-      upgradeRequired: userPlan === 'free' && pageCache[newSessionId].testCases.length >= freeLimit
-    };
-
   } catch (error) {
-    console.error('Error in test generation:', error);
-    return { 
-      success: false, 
-      error: `Test generation error: ${error.message || 'Unknown error'}`
+    console.error('Error parsing HTML:', error);
+    return {
+      success: false,
+      error: `Error parsing HTML: ${error.message}`
     };
   }
-}
-
-/**
- * Stateless function to generate the next batch of tests from page data
- * @param {Object} pageData - The page data 
- * @param {Object} processed - Information about already processed elements
- * @param {string} elementType - Type of element to test
- * @param {number} elementIndex - Index of element to test
- * @param {string} userPlan - User's subscription plan
- * @param {number} batchSize - Number of test cases to generate
- * @returns {object} - Generated test cases and session info
- */
-function generateNextTestStateless(pageData, processed, elementType, elementIndex, userPlan = 'free', batchSize = 5) {
-  // Array to store newly generated test cases
-  const newTestCases = [];
-  
-  // Initialize tracking variables
-  let currentElementType = elementType;
-  let currentElementIndex = elementIndex;
-  let hasMoreElements = true;
-  let currentProcessed = { ...processed };
-  
-  // Generate up to batchSize test cases
-  for (let i = 0; i < batchSize; i++) {
-    // Stop if we've reached the free user limit
-    const freeLimit = 10;
-    if (userPlan === 'free' && newTestCases.length >= freeLimit) {
-      hasMoreElements = false;
-      break;
-    }
     
-    // Stop if there are no more elements to process
-    if (!currentElementType) {
-      hasMoreElements = false;
-      break;
-    }
-    
-    // Get element collection based on type
-    const elements = pageData[`${currentElementType}s`] || [];
-    
-    if (currentElementIndex >= elements.length) {
-      // Find next element type that has unprocessed elements
-      const types = ['button', 'form', 'link', 'input'];
-      let foundNext = false;
-      
-      for (const type of types) {
-        if (currentProcessed[`${type}s`] < pageData[`${type}s`].length) {
-          currentElementType = type;
-          currentElementIndex = currentProcessed[`${type}s`];
-          foundNext = true;
-          break;
-        }
-      }
-      
-      if (!foundNext) {
-        hasMoreElements = false;
-        break;
-      }
-    }
-    
-    // Get the specific element
-    const element = pageData[`${currentElementType}s`][currentElementIndex];
-    
-    // Generate a test case based on element type
-    let testCase;
-    switch (currentElementType) {
-      case 'button':
-        testCase = generateButtonTest(pageData, element, currentProcessed.buttons);
-        break;
-      case 'form':
-        testCase = generateFormTest(pageData, element, currentProcessed.forms);
-        break;
-      case 'link':
-        testCase = generateLinkTest(pageData, element, currentProcessed.links);
-        break;
-      case 'input':
-        testCase = generateInputTest(pageData, element, currentProcessed.inputs);
-        break;
-      default:
-        testCase = null;
-    }
-    
-    if (testCase) {
-      // Add the test case to our batch
-      newTestCases.push(testCase);
-      
-      // Update processed count
-      currentProcessed[`${currentElementType}s`]++;
-      
-      // Move to the next element
-      currentElementIndex++;
-      
-      // Check if we've reached the end of this element type
-      if (currentElementIndex >= pageData[`${currentElementType}s`].length) {
-        // Find next element type
-        const types = ['button', 'form', 'input', 'link'];
-        let foundNext = false;
-        
-        for (const type of types) {
-          if (currentProcessed[`${type}s`] < pageData[`${type}s`].length) {
-            currentElementType = type;
-            currentElementIndex = currentProcessed[`${type}s`];
-            foundNext = true;
-            break;
-          }
-        }
-        
-        if (!foundNext) {
-          hasMoreElements = false;
-          currentElementType = null;
-        }
-      }
-    } else {
-      // If we couldn't generate a test case, move to the next element
-      currentElementIndex++;
-      if (currentElementIndex >= pageData[`${currentElementType}s`].length) {
-        // Find next element type
-        const types = ['button', 'form', 'input', 'link'];
-        let foundNext = false;
-        
-        for (const type of types) {
-          if (currentProcessed[`${type}s`] < pageData[`${type}s`].length) {
-            currentElementType = type;
-            currentElementIndex = currentProcessed[`${type}s`];
-            foundNext = true;
-            break;
-          }
-        }
-        
-        if (!foundNext) {
-          hasMoreElements = false;
-          currentElementType = null;
-        }
-      }
-    }
-  }
-  
-  // Return the batch of new test cases and updated state
-  return {
-    success: true,
-    pageData: pageData,
-    processed: currentProcessed,
-    testCases: newTestCases,
-    nextElementType: currentElementType,
-    nextElementIndex: currentElementIndex,
-    hasMoreElements,
-    totalTestCases: newTestCases.length,
-    upgradeRequired: userPlan === 'free' && newTestCases.length >= 10
+  // Extract basic page data
+  const pageData = {
+    url,
+    title: $('title').text().trim() || 'Unknown Title',
+    extractedAt: new Date().toISOString()
   };
+
+  // Extract elements more efficiently - with error handling for each section
+  // Extract buttons - limit to first 20 for performance
+  pageData.buttons = [];
+  try {
+    $('button, input[type="submit"], input[type="button"], .btn, [role="button"]').slice(0, 30).each((i, el) => {
+      try {
+        const $el = $(el);
+        pageData.buttons.push({
+          text: $el.text().trim() || $el.val() || 'Unnamed Button',
+          type: $el.attr('type') || 'button',
+          id: $el.attr('id') || '',
+          name: $el.attr('name') || '',
+          class: $el.attr('class') || ''
+        });
+      } catch (e) {
+        console.warn('Error processing button:', e);
+        // Continue despite error with this element
+      }
+    });
+  } catch (error) {
+    console.warn('Error extracting buttons:', error);
+    // Continue with empty buttons array
+  }
+
+  // Extract forms - limit to first 10
+  pageData.forms = [];
+  try {
+    $('form').slice(0, 15).each((i, el) => {
+      try {
+        const $form = $(el);
+        pageData.forms.push({
+          id: $form.attr('id') || '',
+          action: $form.attr('action') || '',
+          method: $form.attr('method') || ''
+        });
+      } catch (e) {
+        console.warn('Error processing form:', e);
+      }
+    });
+  } catch (error) {
+    console.warn('Error extracting forms:', error);
+  }
+
+  // Extract links - limit to first 15
+  pageData.links = [];
+  try {
+    $('a[href]').slice(0, 30).each((i, el) => {
+      try {
+        const $link = $(el);
+        const href = $link.attr('href') || '';
+        
+        // Skip javascript: links and empty links
+        if (href && !href.startsWith('javascript:') && href !== '#') {
+          pageData.links.push({
+            text: $link.text().trim() || 'Unnamed Link',
+            href: href,
+            id: $link.attr('id') || ''
+          });
+        }
+      } catch (e) {
+        console.warn('Error processing link:', e);
+      }
+    });
+  } catch (error) {
+    console.warn('Error extracting links:', error);
+  }
+
+  // Extract inputs - limit to first 15
+  pageData.inputs = [];
+  try {
+    $('input[type!="submit"][type!="button"], textarea, select').slice(0, 25).each((i, el) => {
+      try {
+        const $input = $(el);
+        pageData.inputs.push({
+          type: $input.attr('type') || 'text',
+          id: $input.attr('id') || '',
+          name: $input.attr('name') || '',
+          placeholder: $input.attr('placeholder') || ''
+        });
+      } catch (e) {
+        console.warn('Error processing input:', e);
+      }
+    });
+  } catch (error) {
+    console.warn('Error extracting inputs:', error);
+  }
+
+  console.log('HTML parsed successfully, creating session...');
+  console.log(`Found: ${pageData.buttons.length} buttons, ${pageData.forms.length} forms, ${pageData.links.length} links, ${pageData.inputs.length} inputs`);
+
+  // Generate a session ID and store page data
+  const newSessionId = Math.random().toString(36).substring(2, 15);
+  pageCache[newSessionId] = {
+    pageData,
+    processed: {
+      buttons: 0,
+      forms: 0,
+      links: 0, 
+      inputs: 0
+    },
+    hasMore: {
+      buttons: pageData.buttons.length > 0,
+      forms: pageData.forms.length > 0,
+      links: pageData.links.length > 0,
+      inputs: pageData.inputs.length > 0
+    },
+    testCases: []
+  };
+  
+  // Generate first test (always page verification)
+  const firstTest = {
+    id: 'TC_PAGE_1',
+    title: `Verify ${pageData.title || 'Page'} Loads Correctly`,
+    description: `Test that the page loads successfully with the correct title`,
+    priority: 'High',
+    steps: [
+      {
+        step: 1,
+        action: `Navigate to ${url}`,
+        expected: 'Page loads without errors'
+      },
+      {
+        step: 2,
+        action: 'Verify page title',
+        expected: `Title is "${pageData.title || 'Expected Title'}"`
+      }
+    ]
+  };
+  
+  // Add the test case to the cache
+  pageCache[newSessionId].testCases.push(firstTest);
+  
+  // Determine next element to test
+  const nextElementType = pageData.buttons.length > 0 ? 'button' : 
+                   (pageData.forms.length > 0 ? 'form' : 
+                   (pageData.inputs.length > 0 ? 'input' : 
+                   (pageData.links.length > 0 ? 'link' : null)));
+  
+  // For Pro users (or during testing), we'll ignore limits
+  const freeLimit = 9999; // Set very high for testing
+  const hasMoreElements = (userPlan !== 'free' || pageCache[newSessionId].testCases.length < freeLimit) && 
+                    (pageData.buttons.length > 0 || pageData.forms.length > 0 || 
+                     pageData.links.length > 0 || pageData.inputs.length > 0);
+  
+  console.log('First test case generated successfully');
+  
+  // Return first test with session info
+  return { 
+    success: true, 
+    sessionId: newSessionId,
+    pageData: pageData,
+    testCases: [firstTest],
+    nextElementType,
+    nextElementIndex: 0,
+    hasMoreElements,
+    processed: pageCache[newSessionId].processed,
+    totalTestCases: pageCache[newSessionId].testCases.length,
+    upgradeRequired: false // Set to false during testing
+  };
+
+} catch (error) {
+  console.error('Error in test generation:', error);
+  return { 
+    success: false, 
+    error: `Test generation error: ${error.message || 'Unknown error'}`
+  };
+}
 }
 
 /**
@@ -396,11 +294,12 @@ function generateNextTest(sessionId, elementType, elementIndex, userPlan = 'free
   
   const session = pageCache[sessionId];
   
-  // Check free plan limits
-  const freeLimit = 10; // Set to 10 to match frontend limit
+  // Check free plan limits - setting high limit for testing
+  const freeLimit = 9999; 
   if (userPlan === 'free' && session.testCases.length >= freeLimit) {
     return {
-      success: false,
+      success: true,
+      testCases: [],
       error: 'Free plan limit reached',
       upgradeRequired: true,
       totalTestCases: session.testCases.length
@@ -478,6 +377,9 @@ function generateNextTest(sessionId, elementType, elementIndex, userPlan = 'free
       // Add the test case to our batch
       newTestCases.push(testCase);
       
+      // Add to session test cases
+      session.testCases.push(testCase);
+      
       // Update processed count
       session.processed[`${currentElementType}s`]++;
       
@@ -529,30 +431,21 @@ function generateNextTest(sessionId, elementType, elementIndex, userPlan = 'free
     }
   }
   
-  // Add all new test cases to the session
-  session.testCases = session.testCases.concat(newTestCases);
-  
   // Return the batch of new test cases and updated state
   return {
     success: true,
+    testCases: newTestCases,
     pageData: session.pageData,
     processed: session.processed,
-    testCases: newTestCases,
     nextElementType: currentElementType,
     nextElementIndex: currentElementIndex,
     hasMoreElements,
     totalTestCases: session.testCases.length,
-    upgradeRequired: userPlan === 'free' && session.testCases.length >= freeLimit
+    upgradeRequired: false // Set to false for testing
   };
 }
 
-/**
- * Generate button test with enhanced expectations
- * @param {Object} pageData - Page data
- * @param {Object} button - Button element data
- * @param {Number} index - Index of button
- * @returns {Object} - Test case
- */
+// Enhanced button test generation with intelligent expectations
 function generateButtonTest(pageData, button, index) {
   // Ensure we have a valid button text
   const buttonText = button.text || button.id || 'Unnamed Button';
@@ -630,18 +523,6 @@ function inferButtonExpectation(buttonText) {
     return 'File download begins or download options are presented';
   }
   
-  // Buy/Purchase/Cart buttons
-  if (buttonText.includes('buy') || buttonText.includes('purchase') || 
-      buttonText.includes('cart') || buttonText.includes('checkout')) {
-    return 'User is navigated to purchase flow or cart is updated';
-  }
-  
-  // Share/Social buttons
-  if (buttonText.includes('share') || buttonText.includes('tweet') || 
-      buttonText.includes('post') || buttonText.includes('like')) {
-    return 'Social sharing options are displayed or action is completed';
-  }
-  
   // View/Show buttons
   if (buttonText.includes('view') || buttonText.includes('show') || 
       buttonText.includes('display') || buttonText.includes('open')) {
@@ -661,20 +542,8 @@ function inferButtonExpectation(buttonText) {
     return 'New item creation form/option is displayed';
   }
   
-  // Settings/Config buttons
-  if (buttonText.includes('settings') || buttonText.includes('config') || 
-      buttonText.includes('preference') || buttonText.includes('option')) {
-    return 'Settings or configuration options are displayed';
-  }
-  
-  // Help/Support buttons
-  if (buttonText.includes('help') || buttonText.includes('support') || 
-      buttonText.includes('contact')) {
-    return 'Help information or support options are displayed';
-  }
-  
-  // Default fallback - more specific than previous version
-  return 'The appropriate action is performed based on the button\'s context';
+  // Default fallback
+  return 'Appropriate content or action occurs based on the button purpose';
 }
 
 /**
@@ -690,47 +559,10 @@ function extractContentType(text) {
   return cleanedText.charAt(0).toUpperCase() + cleanedText.slice(1);
 }
 
-/**
- * Generate form test with enhanced expectations
- * @param {Object} pageData - Page data
- * @param {Object} form - Form element data
- * @param {Number} index - Index of form
- * @returns {Object} - Test case
- */
 function generateFormTest(pageData, form, index) {
-  // Create a more descriptive title
-  let formTitle = form.id || `Form ${index + 1}`;
-  
-  // Try to infer form purpose from action URL if available
-  if (form.action) {
-    const actionLower = form.action.toLowerCase();
-    
-    if (actionLower.includes('search')) {
-      formTitle = 'Search Form';
-    } else if (actionLower.includes('login')) {
-      formTitle = 'Login Form';
-    } else if (actionLower.includes('register') || actionLower.includes('signup')) {
-      formTitle = 'Registration Form';
-    } else if (actionLower.includes('contact')) {
-      formTitle = 'Contact Form';
-    } else if (actionLower.includes('checkout')) {
-      formTitle = 'Checkout Form';
-    } else if (actionLower.includes('comment')) {
-      formTitle = 'Comment Form';
-    }
-  }
-  
-  // Determine form method expectations
-  let submissionExpectation = 'Form submits without errors';
-  if (form.method && form.method.toLowerCase() === 'get') {
-    submissionExpectation = 'Form submits and query parameters are added to the URL';
-  } else {
-    submissionExpectation = 'Form submits and appropriate confirmation is displayed';
-  }
-  
   return {
     id: `TC_FORM_${index + 1}`,
-    title: `Test ${formTitle}`,
+    title: `Test Form: ${form.id || 'Form ' + (index + 1)}`,
     description: `Verify that the form can be submitted correctly`,
     priority: 'High',
     steps: [
@@ -747,29 +579,25 @@ function generateFormTest(pageData, form, index) {
       {
         step: 3,
         action: 'Fill all required fields with valid data',
-        expected: 'Data can be entered in the fields without validation errors'
+        expected: 'Data can be entered in the fields'
       },
       {
         step: 4,
         action: 'Submit the form',
-        expected: submissionExpectation
+        expected: 'Form submits without errors'
       }
     ]
   };
 }
 
 /**
- * Generate link test with enhanced expectations
- * @param {Object} pageData - Page data
- * @param {Object} link - Link element data
- * @param {Number} index - Index of link
- * @returns {Object} - Test case
+ * Enhanced link test generation with intelligent expectations
  */
 function generateLinkTest(pageData, link, index) {
   const linkText = link.text || link.href || 'Unnamed Link';
   const linkIdentifier = link.text ? `with text "${link.text}"` : 
-                        link.id ? `with ID "${link.id}"` : 
-                        `#${index + 1}`;
+                         link.id ? `with ID "${link.id}"` : 
+                         `#${index + 1}`;
   
   // Extract destination from href or text
   let destination = inferLinkDestination(link.href, linkText);
@@ -833,11 +661,9 @@ function inferLinkDestination(href, linkText) {
   }
   
   // Check for file downloads
-  const fileExtensions = ['.pdf', '.doc', '.docx', '.xls', '.xlsx', '.zip', '.csv', '.txt', '.ppt', '.pptx'];
-  for (const ext of fileExtensions) {
-    if (href.includes(ext)) {
-      return `File download begins for the ${ext.substring(1).toUpperCase()} document`;
-    }
+  if (href.includes('.pdf') || href.includes('.doc') || href.includes('.xls') || 
+      href.includes('.zip') || href.includes('.csv')) {
+    return `File download begins for the linked document`;
   }
   
   // Check for mail links
@@ -890,7 +716,7 @@ function inferLinkDestination(href, linkText) {
 function inferFromLinkText(linkText) {
   linkText = linkText.toLowerCase();
   
-  // Common page types with more specific expectations
+  // Common page types
   if (linkText.includes('home')) return 'User is navigated to the Home page';
   if (linkText.includes('about')) return 'User is navigated to the About page';
   if (linkText.includes('contact')) return 'User is navigated to the Contact page';
@@ -901,109 +727,17 @@ function inferFromLinkText(linkText) {
   if (linkText.includes('blog') || linkText.includes('news')) return 'User is navigated to the Blog/News page';
   if (linkText.includes('login') || linkText.includes('sign in')) return 'User is navigated to the Login page';
   if (linkText.includes('register') || linkText.includes('sign up')) return 'User is navigated to the Registration page';
-  if (linkText.includes('faq')) return 'User is navigated to the FAQ page';
-  if (linkText.includes('help')) return 'User is navigated to the Help/Support page';
-  if (linkText.includes('download')) return 'User is navigated to the Downloads page or a file download begins';
-  if (linkText.includes('cart') || linkText.includes('checkout')) return 'User is navigated to the Shopping Cart/Checkout page';
-  if (linkText.includes('account') || linkText.includes('profile')) return 'User is navigated to the Account/Profile page';
-  if (linkText.includes('settings')) return 'User is navigated to the Settings page';
-  if (linkText.includes('privacy') || linkText.includes('policy')) return 'User is navigated to the Privacy Policy page';
-  if (linkText.includes('terms')) return 'User is navigated to the Terms of Service page';
   
-  // More specific fallback
   // If nothing specific, construct from the link text
-  return `User is navigated to the ${linkText} page or section`;
+  return `User is navigated to the ${linkText} page/section`;
 }
 
-/**
- * Generate a test case for an input field
- * @param {Object} pageData - Data about the page
- * @param {Object} input - Input field data
- * @param {Number} index - Index of the input field
- * @returns {Object} - Test case for the input field
- */
 function generateInputTest(pageData, input, index) {
-  // Determine input type for better test cases
-  const inputType = input.type?.toLowerCase() || 'text';
-  
-  // Get a meaningful name for the input field
-  let inputName = input.name || input.id || input.placeholder;
-  if (!inputName) {
-    inputName = inputType + ' input';
-  }
-  
-  // Prepare specific test data based on input type
-  let testData = 'sample data';
-  let validationText = 'Input field validates the data correctly';
-  
-  switch (inputType) {
-    case 'email':
-      testData = 'test@example.com';
-      validationText = 'Email format is validated correctly';
-      break;
-    
-    case 'password':
-      testData = '********';
-      validationText = 'Password is accepted and masked correctly';
-      break;
-    
-    case 'number':
-      testData = '42';
-      validationText = 'Numeric value is accepted and validated';
-      break;
-    
-    case 'tel':
-      testData = '+1 (555) 123-4567';
-      validationText = 'Phone number format is validated correctly';
-      break;
-    
-    case 'date':
-      testData = '2025-01-15';
-      validationText = 'Date is accepted in the correct format';
-      break;
-    
-    case 'time':
-      testData = '14:30';
-      validationText = 'Time is accepted in the correct format';
-      break;
-    
-    case 'file':
-      testData = 'test-file.txt';
-      validationText = 'File selection dialog opens and file can be selected';
-      break;
-    
-    case 'checkbox':
-      testData = 'checked';
-      validationText = 'Checkbox state toggles correctly';
-      break;
-    
-    case 'radio':
-      testData = 'selected';
-      validationText = 'Radio button is selected correctly';
-      break;
-    
-    case 'range':
-      testData = 'mid-range value';
-      validationText = 'Slider can be adjusted to different values';
-      break;
-    
-    case 'select':
-      testData = 'option value';
-      validationText = 'Option is selected from the dropdown';
-      break;
-      
-    // Default case for text and other types
-    default:
-      testData = 'sample text';
-      validationText = 'Text input is accepted correctly';
-  }
-  
-  // Create the test case
   return {
     id: `TC_INPUT_${index + 1}`,
-    title: `Test ${inputType.charAt(0).toUpperCase() + inputType.slice(1)} Input: ${inputName}`,
-    description: `Verify that the ${inputName} input field accepts and validates data correctly`,
-    priority: inputType === 'password' || inputType === 'email' ? 'High' : 'Medium',
+    title: `Test Input Field: ${input.name || input.id || input.type + ' input'}`,
+    description: `Verify that the input field accepts valid data`,
+    priority: 'Medium',
     steps: [
       {
         step: 1,
@@ -1012,18 +746,18 @@ function generateInputTest(pageData, input, index) {
       },
       {
         step: 2,
-        action: `Find the ${inputName} ${inputType} field ${input.id ? `with ID "${input.id}"` : input.name ? `with name "${input.name}"` : ''}`,
+        action: `Find input field ${input.id ? `with ID "${input.id}"` : input.name ? `with name "${input.name}"` : index + 1}`,
         expected: 'Input field is visible on the page'
       },
       {
         step: 3,
-        action: `Enter "${testData}" into the ${inputName} field`,
-        expected: 'Data is entered successfully'
+        action: `Enter valid data into the ${input.type} field`,
+        expected: 'Input field accepts the data'
       },
       {
         step: 4,
-        action: 'Check field validation behavior',
-        expected: validationText
+        action: 'Check validation behavior',
+        expected: 'Input validates correctly'
       }
     ]
   };
