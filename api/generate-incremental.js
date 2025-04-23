@@ -25,16 +25,18 @@ module.exports = async (req, res) => {
     const body = req.body || {};
     const url = body.url;
     const mode = body.mode || 'first';
-    const format = body.format || 'plain';
+    const sessionId = body.sessionId;
     const elementType = body.elementType;
-    const elementIndex = body.elementIndex ? parseInt(body.elementIndex) : 0;
-    // Default batchSize to 5 if not provided
+    const elementIndex = body.elementIndex !== undefined ? parseInt(body.elementIndex) : 0;
     const batchSize = body.batchSize ? parseInt(body.batchSize) : 5;
     
     // Log request for debugging
-    console.log(`Request params: mode=${mode}, elementType=${elementType}, elementIndex=${elementIndex}, batchSize=${batchSize}`);
+    console.log(`Request params: mode=${mode}, sessionId=${sessionId}, elementType=${elementType}, elementIndex=${elementIndex}, batchSize=${batchSize}`);
     
-    // Check if all required fields are present
+    // Force pro access for testing
+    const userPlan = 'pro';
+    
+    // Check if URL is provided for first-time generation
     if (mode === 'first' && !url) {
       return res.status(400).json({
         success: false,
@@ -42,42 +44,65 @@ module.exports = async (req, res) => {
       });
     }
     
-   // For subsequent calls, we need pageData and processed state
-if (mode === 'next' && (!body.pageData || !body.processed)) {
-  return res.status(400).json({
-    success: false,
-    error: 'Page data and processed state are required for subsequent test generation'
-  });
-}
-
-// Force pro access for testing
-const userPlan = 'pro';
-
-// Process the request based on mode
-let result;
-
-if (mode === 'first') {
-  // For first call, generate initial test
-  result = await generateTestCases(url, {
-    mode: 'first',
-    userPlan: userPlan
-  });
-} else {
-  // For subsequent calls, generate next batch directly with body data
-  // No sessionId required - fully stateless approach
-  result = await generateTestCases(null, {
-    mode: 'next',
-    pageData: body.pageData,
-    processed: body.processed,
-    elementType: elementType,
-    elementIndex: elementIndex,
-    userPlan: userPlan,
-    batchSize: batchSize
-  });
-}
+    // For subsequent requests, sessionId is required
+    if (mode === 'next' && !sessionId) {
+      return res.status(400).json({
+        success: false,
+        error: 'Session ID is required for subsequent test generation'
+      });
+    }
+    
+    // Process the request based on mode
+    let result;
+    
+    console.log(`Processing request in ${mode} mode`);
+    
+    if (mode === 'first') {
+      // Initial test generation
+      result = await generateTestCases(url, {
+        mode: 'first',
+        userPlan: userPlan
+      });
+    } else {
+      // Subsequent test generation with sessionId
+      result = await generateTestCases(null, {
+        mode: 'next',
+        sessionId: sessionId,
+        elementType: elementType,
+        elementIndex: elementIndex,
+        userPlan: userPlan,
+        batchSize: batchSize
+      });
+    }
+    
+    // Ensure result has all required properties
+    if (result && result.success) {
+      console.log(`Success: Generated ${result.testCases ? result.testCases.length : 0} test cases`);
+      
+      // Make sure pageData is present for frontend
+      if (!result.pageData && mode === 'next') {
+        const session = require('../testGen').pageCache[sessionId];
+        if (session && session.pageData) {
+          result.pageData = session.pageData;
+        }
+      }
+      
+      // Make sure processed is present for frontend
+      if (!result.processed && mode === 'next') {
+        const session = require('../testGen').pageCache[sessionId];
+        if (session && session.processed) {
+          result.processed = session.processed;
+        }
+      }
+    } else {
+      console.log('Error: Test generation failed', result ? result.error : 'Unknown error');
+    }
     
     // Return the result to the client
-    return res.status(200).json(result);
+    return res.status(200).json(result || {
+      success: false,
+      error: 'No result returned from test generator'
+    });
   } catch (error) {
     console.error('Error in generate-incremental:', error);
     return res.status(500).json({
@@ -86,7 +111,3 @@ if (mode === 'first') {
     });
   }
 };
-
-// Keep all the fallback functions unchanged below this point:
-// generateFirstTest, generateNextTest, generateButtonTest, etc.
-// (they're already in your existing file)
