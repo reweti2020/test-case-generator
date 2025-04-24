@@ -1,17 +1,20 @@
 {
   "version": 2,
-  "buildCommand": "npm run build",
-  "outputDirectory": "public",
-  "framework": null,
-  "functions": {
-    "api/**/*.js": {
-      "memory": 1024,
-      "maxDuration": 10
+  "builds": [
+    {
+      "src": "server.js",
+      "use": "@vercel/node"
     }
-  },
-  "rewrites": [{ "source": "/api/(.*)", "destination": "/api/$1" }, { "source": "/(.*)", "destination": "/server.js" }],
+  ],
+  "routes": [
+    {
+      "src": "/(.*)",
+      "dest": "/server.js"
+    }
+  ],
   "env": {
     "NODE_ENV": "production"
   }
 }
+
 
