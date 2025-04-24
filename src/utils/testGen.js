@@ -124,6 +124,7 @@ async function generateTestCases(url, options = {}) {
               id: $el.attr("id") || "",
               name: $el.attr("name") || "",
               class: $el.attr("class") || "",
+              href: $el.attr("href") || "",
             })
           } catch (e) {
             console.warn("Error processing button:", e)
@@ -466,7 +467,230 @@ function generateNextTest(sessionId, elementType, elementIndex, userPlan = "free
   }
 }
 
-// Enhanced button test generation with intelligent expectations
+// Replace the inferButtonExpectation function with a more dynamic approach
+
+/**
+ * Infer what should happen when a button is clicked based on its text and attributes
+ * @param {String} buttonText - The text of the button
+ * @param {Object} button - The button object with all attributes
+ * @param {String} baseUrl - The base URL of the page
+ * @returns {String} - Expected result after clicking the button
+ */
+function inferButtonExpectation(buttonText, button = {}, baseUrl = "") {
+  buttonText = buttonText.toLowerCase()
+  const buttonId = (button.id || "").toLowerCase()
+  const buttonClass = (button.class || "").toLowerCase()
+  const buttonType = (button.type || "").toLowerCase()
+
+  // Check for navigation buttons by analyzing href, onclick, or data attributes
+  if (button.href) {
+    return determineNavigationDestination(button.href, buttonText, baseUrl)
+  }
+
+  // Check for form submission buttons
+  if (buttonType === "submit" || buttonText.includes("submit") || buttonId.includes("submit")) {
+    return "Form is submitted and confirmation message is displayed"
+  }
+
+  // View Packages specific case
+  if (buttonText.includes("view") && buttonText.includes("package")) {
+    return "User is navigated to the packages section of the page"
+  }
+
+  // Comparison Table specific case
+  if (buttonText.includes("comparison") && buttonText.includes("table")) {
+    return "Comparison table is displayed showing feature differences"
+  }
+
+  // Check for modal/dialog triggers
+  if (
+    buttonClass.includes("modal") ||
+    buttonId.includes("modal") ||
+    buttonClass.includes("dialog") ||
+    buttonId.includes("dialog") ||
+    buttonText.includes("open") ||
+    buttonText.includes("show")
+  ) {
+    // Extract what's being shown from the button text
+    const modalContent = extractContentFromButtonText(buttonText)
+    return `${modalContent} dialog/modal is displayed`
+  }
+
+  // View-specific buttons
+  if (buttonText.includes("view")) {
+    const viewTarget = buttonText.replace(/view\s+/i, "").trim()
+    if (viewTarget) {
+      return `User is navigated to the ${viewTarget} section/page`
+    }
+  }
+
+  // Toggle buttons
+  if (buttonText.includes("toggle") || buttonText.includes("expand") || buttonText.includes("collapse")) {
+    const toggleTarget = extractContentFromButtonText(buttonText)
+    return `${toggleTarget} section is expanded/collapsed`
+  }
+
+  // Filter buttons
+  if (buttonText.includes("filter")) {
+    return "Filter options are applied and results are updated accordingly"
+  }
+
+  // Search buttons
+  if (buttonText.includes("search") || buttonText.includes("find")) {
+    return "Search is performed and results are displayed for the entered query"
+  }
+
+  // Add/Create buttons
+  if (buttonText.includes("add") || buttonText.includes("create") || buttonText.includes("new")) {
+    const createTarget = extractContentFromButtonText(buttonText)
+    return `Form or dialog to create new ${createTarget} is displayed`
+  }
+
+  // Delete/Remove buttons
+  if (buttonText.includes("delete") || buttonText.includes("remove")) {
+    const deleteTarget = extractContentFromButtonText(buttonText)
+    return `Confirmation dialog appears before deleting ${deleteTarget}`
+  }
+
+  // Edit/Update buttons
+  if (buttonText.includes("edit") || buttonText.includes("update")) {
+    const editTarget = extractContentFromButtonText(buttonText)
+    return `Edit form/dialog for ${editTarget} is displayed`
+  }
+
+  // Save buttons
+  if (buttonText.includes("save")) {
+    return "Data is saved and confirmation message is displayed"
+  }
+
+  // Cancel buttons
+  if (buttonText.includes("cancel")) {
+    return "Action is cancelled and user is returned to previous state"
+  }
+
+  // Download buttons
+  if (buttonText.includes("download")) {
+    const downloadTarget = extractContentFromButtonText(buttonText)
+    return `Download begins for ${downloadTarget || "the file"}`
+  }
+
+  // Login/Logout buttons
+  if (buttonText.includes("login") || buttonText.includes("sign in")) {
+    return "User is logged in and redirected to dashboard/home page"
+  }
+  if (buttonText.includes("logout") || buttonText.includes("sign out")) {
+    return "User is logged out and redirected to login page"
+  }
+
+  // Default fallback based on button text
+  return `${buttonText.charAt(0).toUpperCase() + buttonText.slice(1)} action is performed successfully`
+}
+
+/**
+ * Extract content from button text by removing action verbs
+ * @param {String} text - Button text
+ * @returns {String} - Content type
+ */
+function extractContentFromButtonText(text) {
+  // Remove common action verbs
+  const cleanedText = text
+    .replace(/view\s+/i, "")
+    .replace(/show\s+/i, "")
+    .replace(/display\s+/i, "")
+    .replace(/open\s+/i, "")
+    .replace(/get\s+/i, "")
+    .replace(/see\s+/i, "")
+    .replace(/toggle\s+/i, "")
+    .replace(/expand\s+/i, "")
+    .replace(/collapse\s+/i, "")
+    .replace(/add\s+/i, "")
+    .replace(/create\s+/i, "")
+    .replace(/new\s+/i, "")
+    .replace(/edit\s+/i, "")
+    .replace(/update\s+/i, "")
+    .replace(/delete\s+/i, "")
+    .replace(/remove\s+/i, "")
+    .replace(/download\s+/i, "")
+    .trim()
+
+  // Capitalize the first letter
+  return cleanedText ? cleanedText.charAt(0).toUpperCase() + cleanedText.slice(1) : "content"
+}
+
+/**
+ * Determine navigation destination from href
+ * @param {String} href - Link href attribute
+ * @param {String} linkText - Link text content
+ * @param {String} baseUrl - Base URL of the page
+ * @returns {String} - Expected destination
+ */
+function determineNavigationDestination(href, linkText, baseUrl) {
+  // Handle anchor links (same page navigation)
+  if (href.startsWith("#")) {
+    const anchorName = href.substring(1)
+    return `Page scrolls to the "${anchorName}" section`
+  }
+
+  // Handle absolute URLs
+  if (href.startsWith("http")) {
+    // Check if it's an external link
+    if (!href.includes(baseUrl.replace(/^https?:\/\//, ""))) {
+      try {
+        const domain = new URL(href).hostname
+        return `User is navigated to external website: ${domain}`
+      } catch (e) {
+        return `User is navigated to external website: ${href}`
+      }
+    }
+  }
+
+  // Handle file downloads
+  if (href.match(/\.(pdf|doc|docx|xls|xlsx|csv|zip|rar|tar|gz|mp3|mp4|avi|mov|jpeg|jpg|png|gif)$/i)) {
+    const extension = href.split(".").pop().toLowerCase()
+    return `File download begins for the ${extension.toUpperCase()} file`
+  }
+
+  // Handle email links
+  if (href.startsWith("mailto:")) {
+    return "Email client opens with the specified email address"
+  }
+
+  // Handle phone links
+  if (href.startsWith("tel:")) {
+    return "Phone dialer opens with the specified phone number"
+  }
+
+  // Extract page name from URL path
+  try {
+    let pageName = ""
+    if (href.includes("/")) {
+      const pathParts = href.split("/").filter(Boolean)
+      if (pathParts.length > 0) {
+        pageName = pathParts[pathParts.length - 1]
+          .replace(/\.\w+$/, "") // Remove file extension
+          .replace(/-|_/g, " ") // Replace dashes/underscores with spaces
+          .trim()
+      }
+    }
+
+    if (pageName) {
+      // Capitalize words
+      pageName = pageName
+        .split(" ")
+        .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+        .join(" ")
+
+      return `User is navigated to the ${pageName} page`
+    }
+  } catch (e) {
+    // If URL parsing fails, fall back to link text
+  }
+
+  // If we couldn't determine from href, use the link text
+  return `User is navigated to the ${linkText} page/section`
+}
+
+// Update the generateButtonTest function to pass more information to inferButtonExpectation
 function generateButtonTest(pageData, button, index) {
   // Ensure we have a valid button text
   const buttonText = button.text || button.id || "Unnamed Button"
@@ -476,8 +700,8 @@ function generateButtonTest(pageData, button, index) {
       ? `with ID "${button.id}"`
       : `#${index + 1}`
 
-  // Generate specific expected result based on button text
-  const expectedResult = inferButtonExpectation(buttonText)
+  // Generate specific expected result based on button text and attributes
+  const expectedResult = inferButtonExpectation(buttonText, button, pageData.url)
 
   return {
     id: `TC_BTN_${index + 1}`,
@@ -509,12 +733,23 @@ function generateButtonTest(pageData, button, index) {
  * @param {String} buttonText - The text of the button
  * @returns {String} - Expected result after clicking the button
  */
+/*
 function inferButtonExpectation(buttonText) {
   buttonText = buttonText.toLowerCase()
 
+  // View Packages specific case
+  if (buttonText.includes("view") && buttonText.includes("package")) {
+    return "User is navigated to the packages section of the page"
+  }
+
+  // Comparison Table specific case
+  if (buttonText.includes("comparison") && buttonText.includes("table")) {
+    return "Comparison table is displayed showing feature differences"
+  }
+
   // Search/Filter buttons
   if (buttonText.includes("search") || buttonText.includes("find")) {
-    return "Search results are displayed based on the search criteria"
+    return "Search results are displayed for the entered query"
   }
 
   // Navigation-related buttons
@@ -524,7 +759,7 @@ function inferButtonExpectation(buttonText) {
 
   // Comparison/Table buttons
   if (buttonText.includes("compar") || buttonText.includes("table")) {
-    return "Comparison table is displayed to the user"
+    return "Comparison table is displayed showing differences between items"
   }
 
   // Form submission buttons
@@ -534,15 +769,15 @@ function inferButtonExpectation(buttonText) {
     buttonText.includes("save") ||
     buttonText.includes("apply")
   ) {
-    return "Form is submitted and appropriate confirmation is displayed"
+    return "Form is submitted and confirmation message is displayed"
   }
 
   // Login/account buttons
   if (buttonText.includes("login") || buttonText.includes("sign in")) {
-    return "User is logged in successfully or login form is displayed"
+    return "User is logged in successfully and redirected to dashboard"
   }
   if (buttonText.includes("register") || buttonText.includes("sign up")) {
-    return "Registration form is displayed or user is registered successfully"
+    return "Registration form is completed and confirmation is shown"
   }
 
   // Download buttons
@@ -551,12 +786,12 @@ function inferButtonExpectation(buttonText) {
   }
 
   // View/Show buttons
-  if (
-    buttonText.includes("view") ||
-    buttonText.includes("show") ||
-    buttonText.includes("display") ||
-    buttonText.includes("open")
-  ) {
+  if (buttonText.includes("view")) {
+    const viewTarget = buttonText.replace("view", "").trim()
+    return `User is navigated to the ${viewTarget} section of the page`
+  }
+
+  if (buttonText.includes("show") || buttonText.includes("display") || buttonText.includes("open")) {
     const contentType = extractContentType(buttonText)
     return `${contentType} is displayed to the user`
   }
@@ -573,18 +808,35 @@ function inferButtonExpectation(buttonText) {
 
   // Add/Create buttons
   if (buttonText.includes("add") || buttonText.includes("create") || buttonText.includes("new")) {
-    return "New item creation form/option is displayed"
+    return "New item creation form is displayed with empty fields"
+  }
+
+  // Filter buttons
+  if (buttonText.includes("filter")) {
+    return "Results are filtered according to selected criteria"
+  }
+
+  // Sort buttons
+  if (buttonText.includes("sort")) {
+    return "Results are sorted according to selected criteria"
+  }
+
+  // Reset buttons
+  if (buttonText.includes("reset") || buttonText.includes("clear")) {
+    return "Form or filters are reset to default values"
   }
 
   // Default fallback
-  return "Appropriate content or action occurs based on the button purpose"
+  return "Appropriate content is displayed based on the button's purpose"
 }
+*/
 
 /**
  * Extract content type from button text
  * @param {String} text - Button text
  * @returns {String} - Content type
  */
+/*
 function extractContentType(text) {
   // Remove common action words
   const cleanedText = text.replace(/(view|show|display|open|get|see)\s+/i, "")
@@ -592,6 +844,7 @@ function extractContentType(text) {
   // Capitalize the first letter
   return cleanedText.charAt(0).toUpperCase() + cleanedText.slice(1)
 }
+*/
 
 function generateFormTest(pageData, form, index) {
   return {
