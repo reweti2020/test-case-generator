@@ -8,9 +8,9 @@ const nextConfig = {
   typescript: {
     ignoreBuildErrors: true,
   },
-  // Enable experimental features for App Router
+  // Updated experimental features for Next.js 14
   experimental: {
-    appDir: true,
+    // appDir is now the default in Next.js 14, so we don't need to specify it
     serverComponentsExternalPackages: ["cheerio", "axios"],
   },
   // Configure redirects if needed
@@ -33,3 +33,4 @@ const nextConfig = {
 }
 
 module.exports = nextConfig
+
