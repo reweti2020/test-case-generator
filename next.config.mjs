@@ -2,9 +2,6 @@
 const nextConfig = {
   reactStrictMode: true,
   swcMinify: true,
-  experimental: {
-    // Remove the appDir option completely
-  },
   eslint: {
     ignoreDuringBuilds: true,
   },
