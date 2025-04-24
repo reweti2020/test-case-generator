@@ -29,6 +29,7 @@ export default function TestExecution({ testCases }: TestExecutionProps) {
   const [isRunning, setIsRunning] = useState(false)
   const [progress, setProgress] = useState(0)
   const [results, setResults] = useState<Record<string, "pending" | "passed" | "failed">>({})
+  const [failureReasons, setFailureReasons] = useState<Record<string, string>>({})
 
   const toggleTestSelection = (testId: string) => {
     setSelectedTests((prev) => (prev.includes(testId) ? prev.filter((id) => id !== testId) : [...prev, testId]))
@@ -40,6 +41,38 @@ export default function TestExecution({ testCases }: TestExecutionProps) {
 
   const deselectAll = () => {
     setSelectedTests([])
+  }
+
+  const executeTestCase = async (testId: string) => {
+    try {
+      const response = await fetch("/api/test-executor", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          testId,
+          platform: "web",
+        }),
+      })
+
+      if (!response.ok) {
+        throw new Error(`Server responded with status: ${response.status}`)
+      }
+
+      const result = await response.json()
+
+      return {
+        status: result.status as "passed" | "failed",
+        failureReason: result.failureReason,
+      }
+    } catch (error) {
+      console.error(`Error executing test ${testId}:`, error)
+      return {
+        status: "failed" as const,
+        failureReason: "Test execution failed due to a system error",
+      }
+    }
   }
 
   const executeTests = async () => {
@@ -58,24 +91,29 @@ export default function TestExecution({ testCases }: TestExecutionProps) {
     })
     setResults(initialResults)
 
-    // Simulate test execution with delays
+    // Execute tests one by one
     for (let i = 0; i < selectedTests.length; i++) {
       const testId = selectedTests[i]
 
       // Update progress
       setProgress(Math.round((i / selectedTests.length) * 100))
 
-      // Simulate API call to execute test
-      await new Promise((resolve) => setTimeout(resolve, 1500))
-
-      // Randomly determine if test passed or failed (for demo purposes)
-      const passed = Math.random() > 0.3
+      // Execute the test
+      const result = await executeTestCase(testId)
 
       // Update results
       setResults((prev) => ({
         ...prev,
-        [testId]: passed ? "passed" : "failed",
+        [testId]: result.status,
       }))
+
+      // Store failure reason if test failed
+      if (result.status === "failed") {
+        setFailureReasons((prev) => ({
+          ...prev,
+          [testId]: result.failureReason || "Unknown failure",
+        }))
+      }
     }
 
     setProgress(100)
@@ -165,7 +203,7 @@ export default function TestExecution({ testCases }: TestExecutionProps) {
                       <div>
                         <p className="font-medium">Test failed</p>
                         <p className="text-muted-foreground">
-                          Expected result not achieved in step 2. Element not found.
+                          {failureReasons[test.id] || "Expected result not achieved. Element not found."}
                         </p>
                       </div>
                     </div>
