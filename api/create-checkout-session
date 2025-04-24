@@ -1,73 +1,35 @@
-/**
- * API endpoint for creating Stripe checkout sessions
- */
-const stripe = process.env.STRIPE_SECRET_KEY ? 
-  require('stripe')(process.env.STRIPE_SECRET_KEY) : 
-  null;
-
+// api/create-checkout-session.js
 module.exports = async (req, res) => {
-  // Log the start of the function to help with debugging
-  console.log('[API] Processing create-checkout-session request');
-  
-  try {
-    const { plan } = req.body || {};
-    
-    // Log the request parameters
-    console.log(`Request params: ${JSON.stringify({ plan })}`);
-    
-    // Plan details
-    const plans = {
-      pro: {
-        priceId: process.env.STRIPE_PRO_PRICE_ID || 'price_demo_pro', // Your Stripe price ID
-        name: 'Pro Plan'
-      },
-      enterprise: {
-        priceId: process.env.STRIPE_ENTERPRISE_PRICE_ID || 'price_demo_enterprise',
-        name: 'Enterprise Plan'
-      }
-    };
-    
-    if (!plan || !plans[plan]) {
-      return res.status(400).json({
-        success: false,
-        error: 'Invalid plan specified'
-      });
-    }
-    
-    // Check if Stripe is configured
-    if (!stripe) {
-      console.log('Stripe is not configured. Using demo mode.');
-      
-      // Return a mock session ID for demo purposes
-      return res.status(200).json({
-        success: true,
-        id: 'demo_' + Math.random().toString(36).substring(2, 15)
-      });
-    }
-    
-    // Create checkout session
-    const session = await stripe.checkout.sessions.create({
-      payment_method_types: ['card'],
-      line_items: [
-        {
-          price: plans[plan].priceId,
-          quantity: 1,
-        },
-      ],
-      mode: 'subscription',
-      success_url: `${req.headers.origin || 'https://velocityqa.online'}/success?session_id={CHECKOUT_SESSION_ID}`,
-      cancel_url: `${req.headers.origin || 'https://velocityqa.online'}/`,
-    });
-    
-    return res.status(200).json({ 
-      success: true,
-      id: session.id 
-    });
-  } catch (error) {
-    console.error('Error creating checkout session:', error);
-    return res.status(500).json({ 
-      success: false,
-      error: error.message || 'Unknown error' 
-    });
+  // Enable CORS
+  res.setHeader("Access-Control-Allow-Credentials", true)
+  res.setHeader("Access-Control-Allow-Origin", "*")
+  res.setHeader("Access-Control-Allow-Methods", "GET,OPTIONS,PATCH,DELETE,POST,PUT")
+  res.setHeader(
+    "Access-Control-Allow-Headers",
+    "X-CSRF-Token, X-Requested-With, Accept, Accept-Version, Content-Length, Content-MD5, Content-Type, Date, X-Api-Version, Authorization",
+  )
+
+  // Handle OPTIONS request
+  if (req.method === "OPTIONS") {
+    return res.status(200).end()
   }
-};
+
+  try {
+    const { plan } = req.body || {}
+
+    // In a real implementation, you would create a checkout session with Stripe
+    // For this demo, we'll just return a mock session ID
+    return res.status(200).json({
+      success: true,
+      id: "mock-session-" + Math.random().toString(36).substring(2, 10),
+      plan: plan || "pro",
+    })
+  } catch (error) {
+    console.error("Error in create-checkout-session:", error)
+    return res.status(500).json({
+      success: false,
+      error: `Error: ${error.message || "Unknown error"}`,
+    })
+  }
+}
+
