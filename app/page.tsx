@@ -3,14 +3,14 @@
 import type React from "react"
 
 import { useState } from "react"
-import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
-import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import TestCaseList from "@/components/test-case-list"
-import TestExecutor from "@/components/test-executor"
+import { Button } from "../components/ui/button"
+import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "../components/ui/card"
+import { Input } from "../components/ui/input"
+import { Label } from "../components/ui/label"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../components/ui/select"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "../components/ui/tabs"
+import TestCaseList from "../components/test-case-list"
+import TestExecutor from "../components/test-executor"
 import { Loader2 } from "lucide-react"
 
 export default function TestCaseGenerator() {
@@ -288,3 +288,4 @@ export default function TestCaseGenerator() {
     </div>
   )
 }
+
