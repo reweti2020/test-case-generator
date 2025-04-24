@@ -470,7 +470,7 @@ document.addEventListener("DOMContentLoaded", () => {
             <path d="M2 17l10 5 10-5"></path>
             <path d="M2 12l10 5 10-5"></path>
           </svg>
-          <h3>Premium Features Unlocked!</h3>
+          <h3 style="margin: 0; text-align: center;">Premium Features Unlocked!</h3>
         </div>
         <p>You're enjoying all premium features for free during our launch period. No time limit on your test cases!</p>
         <p class="promo-small">Premium features include unlimited test cases, all export formats, and enhanced detection.</p>
@@ -1162,6 +1162,19 @@ document.addEventListener("DOMContentLoaded", () => {
         event_label: label,
       })
     }
+
+    // You can also implement your own analytics here
+    console.log(`Analytics: ${event}, ${category}, ${label}`)
+  }
+
+  // Declare gtag if it's not already defined
+  if (typeof gtag === "undefined") {
+    gtag = () => {
+      console.log("gtag function called", arguments)
+    }
+  }
+})
+
 
     // You can also implement your own analytics here
     console.log(`Analytics: ${event}, ${category}, ${label}`)
