@@ -3,7 +3,7 @@
  * Add these styles to your existing style.css file or include as a separate stylesheet
  */
 
- .promo-banner {
+.promo-banner {
   background-color: rgba(32, 197, 198, 0.15);
   border-bottom: 1px solid var(--teal);
   color: var(--text);
@@ -31,12 +31,13 @@
   font-size: 0.8rem;
   font-weight: 600;
   display: inline-block;
-  margin-bottom: 0.25rem;
+  margin-left: 0.5rem;
 }
 
 .promo-banner p {
   margin: 0;
   font-size: 0.9rem;
+  text-align: center;
 }
 
 .close-promo {
@@ -58,11 +59,14 @@
 .promo-header {
   display: flex;
   align-items: center;
+  justify-content: center;
   gap: 0.5rem;
+  margin-bottom: 0.25rem;
 }
 
 .promo-icon {
-  font-size: 1.5rem;
+  color: var(--teal);
+  stroke-width: 2;
 }
 
 .promo-small {
@@ -72,8 +76,8 @@
 
 /* Upgrade banner replacement */
 .upgrade-banner.promo-banner {
-  background-color: rgba(255, 107, 0, 0.1);
-  border: 1px solid var(--orange);
+  background-color: rgba(32, 197, 198, 0.1);
+  border: 1px solid var(--teal);
   border-radius: var(--border-radius);
   padding: 1.5rem;
   margin-bottom: 2rem;
