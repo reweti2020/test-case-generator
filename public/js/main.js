@@ -454,9 +454,7 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   }
 
-  /**
-   * Show promotional banner instead of upgrade banner
-   */
+  // Update the showPromotionalBanner function to use the new icon
   function showPromotionalBanner() {
     if (!elements.upgradeBanner) return
 
@@ -467,7 +465,11 @@ document.addEventListener("DOMContentLoaded", () => {
     elements.upgradeBanner.innerHTML = `
       <div class="promo-content">
         <div class="promo-header">
-          <span class="promo-icon">🎁</span>
+          <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="promo-icon">
+            <path d="M12 2L2 7l10 5 10-5-10-5z"></path>
+            <path d="M2 17l10 5 10-5"></path>
+            <path d="M2 12l10 5 10-5"></path>
+          </svg>
           <h3>Premium Features Unlocked!</h3>
         </div>
         <p>You're enjoying all premium features for free during our launch period. No time limit on your test cases!</p>
@@ -600,4 +602,569 @@ document.addEventListener("DOMContentLoaded", () => {
     if (!testCases || testCases.length === 0 || !elements.output) return
 
     // Create or get test case list container
+    if (!append) {
+      elements.output.innerHTML = ""
+      const newList = document.createElement("div")
+      newList.id = "test-case-list"
+      elements.output.appendChild(newList)
+
+      // Add help info
+      const helpInfo = document.createElement("div")
+      helpInfo.className = "help-info"
+      helpInfo.innerHTML = `
+        <div class="info-icon">ℹ️</div>
+        <div class="info-text">
+          <strong>Notice:</strong> If test cases don't match the website exactly, use the "Edit" button to correct them. Your changes will be saved for future test generations.
+        </div>
+      `
+      newList.appendChild(helpInfo)
+    }
+
+    const testCaseList = document.getElementById("test-case-list") || elements.output
+
+    // Add test cases
+    testCases.forEach((testCase) => {
+      if (!testCase) return
+
+      const testCaseElement = document.createElement("div")
+      testCaseElement.className = "test-case collapsed"
+      testCaseElement.setAttribute("data-id", testCase.id || "unknown")
+
+      // Create header (always visible)
+      const header = document.createElement("div")
+      header.className = "test-case-header"
+      header.innerHTML = `
+        <div class="test-case-title-bar">
+          <div class="expand-icon">▶</div>
+          <h3>${testCase.title || "Untitled Test Case"}</h3>
+        </div>
+        <div class="test-case-actions">
+          <button class="edit-button" data-id="${testCase.id}">Edit</button>
+          <span class="priority priority-${testCase.priority || "Medium"}">${testCase.priority || "Medium"}</span>
+        </div>
+      `
+
+      // Create content (hidden by default)
+      const content = document.createElement("div")
+      content.className = "test-case-content"
+      content.style.display = "none"
+      content.innerHTML = `
+        <p>${testCase.description || "No description provided"}</p>
+        <div class="test-steps">
+          <h4>Test Steps:</h4>
+          <ol>
+            ${
+              testCase.steps && testCase.steps.length > 0
+                ? testCase.steps
+                    .map(
+                      (step) => `
+                <li>
+                  <div class="step-content">
+                    <p><strong>Action:</strong> ${step.action || "No action specified"}</p>
+                    <p><strong>Expected:</strong> ${step.expected || "No expected result specified"}</p>
+                  </div>
+                </li>
+              `,
+                    )
+                    .join("")
+                : '<li><div class="step-content"><p>No steps defined for this test case</p></div></li>'
+            }
+          </ol>
+        </div>
+      `
+
+      // Add click handler to toggle expansion
+      header.querySelector(".test-case-title-bar").addEventListener("click", () => {
+        const isCollapsed = testCaseElement.classList.contains("collapsed")
+        if (isCollapsed) {
+          testCaseElement.classList.remove("collapsed")
+          testCaseElement.classList.add("expanded")
+          content.style.display = "block"
+          header.querySelector(".expand-icon").textContent = "▼"
+        } else {
+          testCaseElement.classList.remove("expanded")
+          testCaseElement.classList.add("collapsed")
+          content.style.display = "none"
+          header.querySelector(".expand-icon").textContent = "▶"
+        }
+      })
+
+      testCaseElement.appendChild(header)
+      testCaseElement.appendChild(content)
+      testCaseList.appendChild(testCaseElement)
+    })
+
+    // Update test case counter
+    if (elements.testCaseCounter) {
+      elements.testCaseCounter.textContent = `${state.testCases.length} test case${state.testCases.length !== 1 ? "s" : ""}`
+    }
+  }
+
+  /**
+   * Initialize the correction UI event handlers
+   */
+  function initCorrectionUI() {
+    // Get elements
+    const correctionUI = document.getElementById("correction-ui")
+    const closeButton = document.getElementById("close-correction")
+    const saveButton = document.getElementById("save-correction")
+    const cancelButton = document.getElementById("cancel-correction")
+
+    if (!correctionUI || !closeButton || !saveButton || !cancelButton) return
+
+    // Add event listeners for edit buttons (delegated to parent)
+    document.addEventListener("click", (e) => {
+      if (e.target && e.target.classList.contains("edit-button")) {
+        const testId = e.target.getAttribute("data-id")
+        openCorrectionUI(testId)
+      }
+    })
+
+    // Close correction UI
+    closeButton.addEventListener("click", () => {
+      correctionUI.classList.add("hidden")
+    })
+
+    // Cancel editing
+    cancelButton.addEventListener("click", () => {
+      correctionUI.classList.add("hidden")
+    })
+
+    // Save changes
+    saveButton.addEventListener("click", saveTestCaseChanges)
+  }
+
+  /**
+   * Current test case being edited
+   */
+  let currentEditingTestCase = null
+
+  /**
+   * Open the correction UI for a specific test case
+   * @param {String} testId - Test case ID
+   */
+  function openCorrectionUI(testId) {
+    // Find the test case in state
+    const testCase = state.testCases.find((tc) => tc.id === testId)
+    if (!testCase) return
+
+    // Store current test case
+    currentEditingTestCase = testCase
+
+    // Get UI elements
+    const correctionUI = document.getElementById("correction-ui")
+    const titleInput = document.getElementById("edit-title")
+    const descriptionInput = document.getElementById("edit-description")
+    const stepsContainer = document.getElementById("edit-steps-container")
+
+    if (!correctionUI || !titleInput || !descriptionInput || !stepsContainer) return
+
+    // Fill in test case details
+    titleInput.value = testCase.title || ""
+    descriptionInput.value = testCase.description || ""
+
+    // Create inputs for steps
+    stepsContainer.innerHTML = ""
+    if (testCase.steps && testCase.steps.length > 0) {
+      testCase.steps.forEach((step, index) => {
+        // Format the expected value for title verification
+        let expectedValue = step.expected || ""
+        if (step.action.includes("Verify page title") && expectedValue.startsWith('Title is "')) {
+          // Extract just the title part for editing
+          expectedValue = expectedValue.replace(/^Title is\s*"/, "").replace(/"$/, "")
+        }
+
+        const stepEl = document.createElement("div")
+        stepEl.className = "edit-step"
+        stepEl.innerHTML = `
+          <div class="step-number">Step ${step.step}</div>
+          <div class="form-group">
+            <label for="edit-step-action-${index}">Action:</label>
+            <input type="text" id="edit-step-action-${index}" class="edit-input edit-step-action" data-index="${index}" value="${step.action || ""}">
+          </div>
+          <div class="form-group">
+            <label for="edit-step-expected-${index}">Expected Result:</label>
+            <input type="text" id="edit-step-expected-${index}" class="edit-input edit-step-expected" data-index="${index}" value="${expectedValue}">
+          </div>
+        `
+        stepsContainer.appendChild(stepEl)
+      })
+    }
+
+    // Show correction UI
+    correctionUI.classList.remove("hidden")
+
+    // Scroll to correction UI
+    correctionUI.scrollIntoView({ behavior: "smooth" })
+  }
+
+  /**
+   * Save changes to the test case
+   */
+  function saveTestCaseChanges() {
+    if (!currentEditingTestCase) return
+
+    // Get UI elements
+    const titleInput = document.getElementById("edit-title")
+    const descriptionInput = document.getElementById("edit-description")
+    const actionInputs = document.querySelectorAll(".edit-step-action")
+    const expectedInputs = document.querySelectorAll(".edit-step-expected")
+
+    if (!titleInput || !descriptionInput) return
+
+    // Update test case
+    currentEditingTestCase.title = titleInput.value
+    currentEditingTestCase.description = descriptionInput.value
+
+    // Update steps
+    if (currentEditingTestCase.steps && currentEditingTestCase.steps.length > 0) {
+      actionInputs.forEach((input) => {
+        const index = Number.parseInt(input.getAttribute("data-index"))
+        if (currentEditingTestCase.steps[index]) {
+          currentEditingTestCase.steps[index].action = input.value
+        }
+      })
+
+      expectedInputs.forEach((input) => {
+        const index = Number.parseInt(input.getAttribute("data-index"))
+        if (currentEditingTestCase.steps[index]) {
+          const expectedValue = input.value
+
+          // Special handling for title verification steps
+          if (currentEditingTestCase.steps[index].action.includes("Verify page title")) {
+            // Make sure the format is "Title is 'whatever'"
+            if (!expectedValue.startsWith('Title is "')) {
+              currentEditingTestCase.steps[index].expected =
+                `Title is "${expectedValue.replace(/^Title is\s*"?/i, "").replace(/"$/g, "")}"`
+            } else {
+              currentEditingTestCase.steps[index].expected = expectedValue
+            }
+          } else {
+            currentEditingTestCase.steps[index].expected = expectedValue
+          }
+        }
+      })
+    }
+
+    // Re-render test cases
+    renderTestCases(state.testCases)
+
+    // Hide correction UI
+    const correctionUI = document.getElementById("correction-ui")
+    if (correctionUI) {
+      correctionUI.classList.add("hidden")
+    }
+
+    // Show success notification
+    showNotification("Test case updated successfully")
+
+    // Save corrections to localStorage
+    saveCorrectionsToStorage()
+  }
+
+  /**
+   * Save corrections to localStorage for future use
+   */
+  function saveCorrectionsToStorage() {
+    if (!currentEditingTestCase) return
+
+    // Get existing corrections
+    const corrections = JSON.parse(localStorage.getItem("testCaseCorrections") || "{}")
+
+    // Create key using URL as identifier
+    const urlKey = state.currentUrl
+    if (!corrections[urlKey]) {
+      corrections[urlKey] = {}
+    }
+
+    // Save the correction using test case ID as key
+    corrections[urlKey][currentEditingTestCase.id] = {
+      title: currentEditingTestCase.title,
+      description: currentEditingTestCase.description,
+      steps: currentEditingTestCase.steps.map((step) => ({
+        action: step.action,
+        expected: step.expected,
+      })),
+    }
+
+    // Save to localStorage
+    localStorage.setItem("testCaseCorrections", JSON.stringify(corrections))
+  }
+
+  /**
+   * Apply stored corrections when loading test cases
+   * @param {Array} testCases - Test cases to check for corrections
+   * @returns {Array} - Corrected test cases
+   */
+  function applyStoredCorrections(testCases) {
+    if (!testCases || !state.currentUrl) return testCases
+
+    // Get stored corrections
+    const corrections = JSON.parse(localStorage.getItem("testCaseCorrections") || "{}")
+    const urlCorrections = corrections[state.currentUrl] || {}
+
+    // Apply corrections if they exist
+    return testCases.map((testCase) => {
+      const correction = urlCorrections[testCase.id]
+      if (correction) {
+        // Create a copy to avoid mutating the original
+        const correctedCase = { ...testCase }
+
+        // Apply title and description corrections
+        if (correction.title) correctedCase.title = correction.title
+        if (correction.description) correctedCase.description = correction.description
+
+        // Apply step corrections
+        if (correction.steps && correctedCase.steps) {
+          correctedCase.steps = correctedCase.steps.map((step, index) => {
+            if (correction.steps[index]) {
+              return {
+                ...step,
+                action: correction.steps[index].action || step.action,
+                expected: correction.steps[index].expected || step.expected,
+              }
+            }
+            return step
+          })
+        }
+
+        return correctedCase
+      }
+      return testCase
+    })
+  }
+
+  /**
+   * Show a notification message
+   * @param {String} message - Message to show
+   */
+  function showNotification(message) {
+    // Create notification element
+    const notification = document.createElement("div")
+    notification.className = "notification"
+    notification.textContent = message
+
+    // Add to document
+    document.body.appendChild(notification)
+
+    // Automatically remove after 3 seconds
+    setTimeout(() => {
+      notification.classList.add("fade-out")
+      setTimeout(() => {
+        if (notification.parentNode) {
+          notification.parentNode.removeChild(notification)
+        }
+      }, 500)
+    }, 3000)
+  }
+
+  /**
+   * Update element info and progress display
+   */
+  function updateElementInfo() {
+    if (!elements.elementInfo || !state.pageData) return
+
+    // Calculate progress percentages
+    const buttonProgress =
+      state.pageData.buttons?.length > 0
+        ? Math.round((state.processed.buttons / state.pageData.buttons.length) * 100)
+        : 100
+
+    const formProgress =
+      state.pageData.forms?.length > 0 ? Math.round((state.processed.forms / state.pageData.forms.length) * 100) : 100
+
+    const linkProgress =
+      state.pageData.links?.length > 0 ? Math.round((state.processed.links / state.pageData.links.length) * 100) : 100
+
+    const inputProgress =
+      state.pageData.inputs?.length > 0
+        ? Math.round((state.processed.inputs / state.pageData.inputs.length) * 100)
+        : 100
+
+    // Calculate overall progress
+    const totalElements =
+      (state.pageData.buttons?.length || 0) +
+      (state.pageData.forms?.length || 0) +
+      (state.pageData.links?.length || 0) +
+      (state.pageData.inputs?.length || 0)
+
+    const processedElements =
+      (state.processed.buttons || 0) +
+      (state.processed.forms || 0) +
+      (state.processed.links || 0) +
+      (state.processed.inputs || 0)
+
+    const overallProgress = totalElements > 0 ? Math.round((processedElements / totalElements) * 100) : 100
+
+    // Determine next element text
+    const elementTypes = {
+      button: "Button",
+      form: "Form",
+      link: "Link",
+      input: "Input Field",
+    }
+
+    const nextElementText = state.nextElementType
+      ? `Next up: ${elementTypes[state.nextElementType] || "Element"} #${state.nextElementIndex + 1}`
+      : "All elements processed"
+
+    // Update progress display
+    elements.elementInfo.innerHTML = `
+      <div class="progress-info">
+        <div class="progress-text">${nextElementText} - ${overallProgress}% complete</div>
+        <div class="progress-bar">
+          <div class="progress-fill" style="width: ${overallProgress}%"></div>
+        </div>
+      </div>
+    `
+  }
+
+  /**
+   * Add event listeners for download buttons
+   */
+  function addDownloadEventListeners() {
+    const downloadButtons = [
+      { id: "download-txt", format: "txt" },
+      { id: "download-json", format: "json" },
+      { id: "download-csv", format: "csv" },
+      { id: "download-html", format: "html" },
+      { id: "download-katalon", format: "katalon" },
+      { id: "download-maestro", format: "maestro" },
+    ]
+
+    downloadButtons.forEach((button) => {
+      const element = document.getElementById(button.id)
+      if (element) {
+        element.addEventListener("click", () => handleDownload(button.format))
+      }
+    })
+  }
+
+  /**
+   * Handle download request
+   * @param {String} format - Export format
+   */
+  async function handleDownload(format) {
+    if (!state.testCases || state.testCases.length === 0) {
+      showError("No test cases to download")
+      return
+    }
+
+    // Track download event
+    trackEvent("download_test_cases", "usage", format)
+
+    setLoading(true)
+
+    try {
+      const response = await fetch("/api/export-test", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          sessionId: state.sessionId,
+          format: format,
+        }),
+      })
+
+      if (!response.ok) {
+        throw new Error(`Server responded with status: ${response.status}`)
+      }
+
+      const data = await response.json()
+
+      if (data.success) {
+        // Trigger download
+        downloadFile(data.exportData, data.filename, data.contentType)
+      } else {
+        showError(`Export error: ${data.error || "Unknown error"}`)
+
+        // Show promo message instead of upgrade banner
+        if (data.upgradeRequired && elements.upgradeBanner) {
+          showPromotionalBanner()
+        }
+      }
+    } catch (error) {
+      showError(`Download error: ${error.message || "Unknown error"}`)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  /**
+   * Download file helper
+   * @param {String} content - File content
+   * @param {String} filename - File name
+   * @param {String} contentType - Content type
+   */
+  function downloadFile(content, filename, contentType) {
+    if (!content) {
+      showError("No content to download")
+      return
+    }
+
+    const blob = new Blob([content], { type: contentType || "text/plain" })
+    const url = URL.createObjectURL(blob)
+
+    const a = document.createElement("a")
+    a.href = url
+    a.download = filename || "download.txt"
+    document.body.appendChild(a)
+    a.click()
+
+    setTimeout(() => {
+      document.body.removeChild(a)
+      URL.revokeObjectURL(url)
+    }, 100)
+  }
+
+  /**
+   * Show error message
+   * @param {String} message - Error message
+   */
+  function showError(message) {
+    if (!elements.output) return
+    elements.output.innerHTML = `<p class="error">❌ ${message}</p>`
+  }
+
+  /**
+   * Set loading state
+   * @param {Boolean} isLoading - Whether loading is active
+   */
+  function setLoading(isLoading) {
+    state.isLoading = isLoading
+
+    if (elements.loadingSpinner) {
+      elements.loadingSpinner.style.display = isLoading ? "block" : "none"
+    }
+
+    if (elements.generateButton) {
+      elements.generateButton.disabled = isLoading
+      elements.generateButton.innerHTML = isLoading
+        ? '<span class="spinner-small"></span> Generating...'
+        : "Generate Test Cases"
+    }
+
+    if (elements.generateNextTest) {
+      elements.generateNextTest.disabled = isLoading
+    }
+  }
+
+  /**
+   * Track analytics event
+   * @param {String} event - Event name
+   * @param {String} category - Event category
+   * @param {String} label - Event label
+   */
+  function trackEvent(event, category, label) {
+    // Google Analytics tracking
+    if (typeof gtag !== "undefined" && gtag) {
+      gtag("event", event, {
+        event_category: category,
+        event_label: label,
+      })
+    }
+
+    // You can also implement your own analytics here
+    console.log(`Analytics: ${event}, ${category}, ${label}`)
+  }
+})
 
