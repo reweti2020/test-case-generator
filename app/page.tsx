@@ -2,16 +2,17 @@
 
 import type React from "react"
 
-import { useState } from "react"
-import { Button } from "../components/ui/button"
-import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "../components/ui/card"
-import { Input } from "../components/ui/input"
-import { Label } from "../components/ui/label"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../components/ui/select"
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "../components/ui/tabs"
-import TestCaseList from "../components/test-case-list"
-import TestExecutor from "../components/test-executor"
-import { Loader2 } from "lucide-react"
+import { useState, useEffect } from "react"
+import { Button } from "@/components/ui/button"
+import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import TestCaseList from "@/components/test-case-list"
+import TestExecutor from "@/components/test-executor"
+import { Loader2, Download, Upload, Save } from 'lucide-react'
+import { Alert, AlertDescription } from "@/components/ui/alert"
 
 export default function TestCaseGenerator() {
   const [url, setUrl] = useState("")
@@ -24,6 +25,22 @@ export default function TestCaseGenerator() {
   const [nextElementIndex, setNextElementIndex] = useState(0)
   const [totalTestCases, setTotalTestCases] = useState(0)
   const [error, setError] = useState<string | null>(null)
+  const [successMessage, setSuccessMessage] = useState<string | null>(null)
+
+  // Load saved test cases on component mount
+  useEffect(() => {
+    const savedTestCases = localStorage.getItem('savedTestCases')
+    if (savedTestCases) {
+      try {
+        const parsed = JSON.parse(savedTestCases)
+        if (parsed.length > 0) {
+          setSuccessMessage("Previously saved test cases are available. Click 'Load Saved Tests' to view them.")
+        }
+      } catch (e) {
+        console.error('Failed to parse saved test cases', e)
+      }
+    }
+  }, [])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -36,6 +53,7 @@ export default function TestCaseGenerator() {
     setError(null)
     setTestCases([])
     setSessionId(null)
+    setSuccessMessage(null)
 
     try {
       const response = await fetch("/api/generate-incremental", {
@@ -61,6 +79,7 @@ export default function TestCaseGenerator() {
         setNextElementType(data.nextElementType)
         setNextElementIndex(data.nextElementIndex)
         setTotalTestCases(data.totalTestCases || (data.testCases ? data.testCases.length : 0))
+        setSuccessMessage("Test cases generated successfully!")
       } else {
         setError(`Error: ${data.error || "Unknown error occurred"}`)
       }
@@ -75,6 +94,8 @@ export default function TestCaseGenerator() {
     if (!sessionId || !hasMoreElements) return
 
     setIsLoading(true)
+    setError(null)
+    setSuccessMessage(null)
 
     try {
       const response = await fetch("/api/generate-incremental", {
@@ -102,6 +123,7 @@ export default function TestCaseGenerator() {
         setNextElementType(data.nextElementType)
         setNextElementIndex(data.nextElementIndex)
         setTotalTestCases(data.totalTestCases || testCases.length + (data.testCases?.length || 0))
+        setSuccessMessage("Additional test cases generated successfully!")
       } else {
         setError(`Error: ${data.error || "Unknown error occurred"}`)
       }
@@ -142,12 +164,113 @@ export default function TestCaseGenerator() {
         a.click()
         document.body.removeChild(a)
         URL.revokeObjectURL(url)
+        setSuccessMessage(`Test cases exported as ${format.toUpperCase()} successfully!`)
       } else {
         setError(`Export error: ${data.error || "Unknown error"}`)
       }
     } catch (error: any) {
       setError(`Export error: ${error.message || "Unknown error"}`)
     }
+  }
+
+  const saveTestCases = () => {
+    if (testCases.length === 0) return
+    
+    const testSuite = {
+      url,
+      sessionId,
+      testCases,
+      date: new Date().toISOString()
+    }
+    
+    // Get existing saved test suites
+    const savedTestCases = localStorage.getItem('savedTestCases')
+    let testSuites = []
+    
+    if (savedTestCases) {
+      try {
+        testSuites = JSON.parse(savedTestCases)
+      } catch (e) {
+        console.error('Failed to parse saved test cases', e)
+      }
+    }
+    
+    // Add new test suite
+    testSuites.push(testSuite)
+    
+    // Save back to localStorage
+    localStorage.setItem('savedTestCases', JSON.stringify(testSuites))
+    setSuccessMessage("Test cases saved successfully!")
+  }
+  
+  const loadSavedTestCases = () => {
+    const savedTestCases = localStorage.getItem('savedTestCases')
+    if (!savedTestCases) {
+      setError("No saved test cases found")
+      return
+    }
+    
+    try {
+      const testSuites = JSON.parse(savedTestCases)
+      if (testSuites.length === 0) {
+        setError("No saved test cases found")
+        return
+      }
+      
+      // Load the most recent test suite
+      const latestTestSuite = testSuites[testSuites.length - 1]
+      setUrl(latestTestSuite.url)
+      setSessionId(latestTestSuite.sessionId)
+      setTestCases(latestTestSuite.testCases)
+      setSuccessMessage(`Loaded test cases for ${latestTestSuite.url} from ${new Date(latestTestSuite.date).toLocaleString()}`)
+    } catch (e) {
+      setError("Failed to load saved test cases")
+      console.error('Failed to parse saved test cases', e)
+    }
+  }
+  
+  const exportTestCasesAsJson = () => {
+    if (testCases.length === 0) return
+    
+    const testSuite = {
+      url,
+      testCases,
+      date: new Date().toISOString()
+    }
+    
+    const blob = new Blob([JSON.stringify(testSuite, null, 2)], { type: 'application/json' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `test-cases-${new Date().toISOString().slice(0, 10)}.json`
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    URL.revokeObjectURL(url)
+    setSuccessMessage("Test cases exported to file successfully!")
+  }
+  
+  const importTestCases = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0]
+    if (!file) return
+    
+    const reader = new FileReader()
+    reader.onload = (e) => {
+      try {
+        const importedData = JSON.parse(e.target?.result as string)
+        
+        if (importedData.testCases) {
+          setUrl(importedData.url || "")
+          setTestCases(importedData.testCases)
+          setSuccessMessage(`Imported ${importedData.testCases.length} test cases successfully!`)
+        } else {
+          throw new Error('Invalid test cases file format')
+        }
+      } catch (error: any) {
+        setError(`Failed to import test cases: ${error.message}`)
+      }
+    }
+    reader.readAsText(file)
   }
 
   return (
@@ -203,7 +326,7 @@ export default function TestCaseGenerator() {
                   </div>
                 </div>
 
-                <div className="flex justify-end">
+                <div className="flex flex-wrap gap-2 justify-end">
                   <Button type="submit" disabled={isLoading}>
                     {isLoading ? (
                       <>
@@ -214,10 +337,44 @@ export default function TestCaseGenerator() {
                       "Generate Test Cases"
                     )}
                   </Button>
+                  
+                  <Button 
+                    type="button" 
+                    variant="outline" 
+                    onClick={loadSavedTestCases}
+                  >
+                    Load Saved Tests
+                  </Button>
+                  
+                  <div className="relative">
+                    <input
+                      type="file"
+                      id="import-test-cases"
+                      className="absolute inset-0 opacity-0 w-full cursor-pointer"
+                      accept=".json"
+                      onChange={importTestCases}
+                    />
+                    <Button variant="outline" asChild>
+                      <label htmlFor="import-test-cases" className="cursor-pointer">
+                        <Upload className="mr-2 h-4 w-4" />
+                        Import Tests
+                      </label>
+                    </Button>
+                  </div>
                 </div>
               </form>
 
-              {error && <div className="mt-4 p-4 bg-destructive/10 text-destructive rounded-md">{error}</div>}
+              {error && (
+                <Alert variant="destructive" className="mt-4">
+                  <AlertDescription>{error}</AlertDescription>
+                </Alert>
+              )}
+              
+              {successMessage && (
+                <Alert className="mt-4 bg-green-500/10 border-green-500/50">
+                  <AlertDescription>{successMessage}</AlertDescription>
+                </Alert>
+              )}
 
               {hasMoreElements && testCases.length > 0 && (
                 <div className="mt-6 p-4 border rounded-md bg-muted/50">
@@ -252,7 +409,19 @@ export default function TestCaseGenerator() {
             {testCases.length > 0 && (
               <CardFooter className="flex flex-col">
                 <div className="w-full mb-4">
-                  <h3 className="text-lg font-medium mb-2">Export Options</h3>
+                  <div className="flex justify-between items-center mb-2">
+                    <h3 className="text-lg font-medium">Export Options</h3>
+                    <div className="flex gap-2">
+                      <Button size="sm" variant="outline" onClick={saveTestCases}>
+                        <Save className="mr-2 h-4 w-4" />
+                        Save Tests
+                      </Button>
+                      <Button size="sm" variant="outline" onClick={exportTestCasesAsJson}>
+                        <Download className="mr-2 h-4 w-4" />
+                        Export Tests
+                      </Button>
+                    </div>
+                  </div>
                   <div className="flex flex-wrap gap-2">
                     <Button size="sm" variant="outline" onClick={() => handleExport("json")}>
                       JSON
@@ -288,4 +457,5 @@ export default function TestCaseGenerator() {
     </div>
   )
 }
+
 
