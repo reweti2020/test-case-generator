@@ -1,7 +1,7 @@
 
 # Test Case Generator
 
-A modern web application that automatically generates test cases by analyzing website elements. This tool helps QA engineers and developers create comprehensive test suites quickly and efficiently
+A modern web application that automatically generates test cases by analyzing website elements. This tool helps QA engineers and developers create comprehensive test suites quickly and efficiently.
 
 ![Test Case Generator](https://sjc.microlink.io/W46eIikY1wlYM6KONpdBJXsEa9gg-7aA-2K2ZGMm0tEAAIEF9HtrMZM0BjMeu64tUBedWxoBleJER1xdDEalAg.jpeg)
 
