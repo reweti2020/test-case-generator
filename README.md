@@ -1,2 +1,2 @@
-# test-case-generator builds.
+# test-case-generator builds
 
