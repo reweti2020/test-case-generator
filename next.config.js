@@ -13,13 +13,11 @@ const nextConfig = {
   },
   // Updated experimental features for Next.js 14
   experimental: {
-    // appDir is now the default in Next.js 14, so we don't need to specify it
     serverComponentsExternalPackages: ["cheerio", "axios"],
   },
-  // Configure webpack if needed
-  webpack(config) {
-    return config
-  },
+  // Configure output to be compatible with Vercel
+  output: "standalone",
 }
 
 module.exports = nextConfig
+
