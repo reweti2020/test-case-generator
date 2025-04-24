@@ -12,7 +12,7 @@ document.addEventListener("DOMContentLoaded", () => {
           <path d="M2 17l10 5 10-5"></path>
           <path d="M2 12l10 5 10-5"></path>
         </svg>
-        <span class="promo-tag">LIMITED TIME OFFER</span>
+        <h3 style="margin: 0; text-align: center;">LIMITED TIME OFFER</h3>
       </div>
       <p>All Pro features are currently available for free during our launch period!</p>
     </div>
@@ -463,19 +463,19 @@ document.addEventListener("DOMContentLoaded", () => {
     elements.upgradeBanner.classList.add("promo-banner")
 
     elements.upgradeBanner.innerHTML = `
-      <div class="promo-content">
-        <div class="promo-header">
-          <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="promo-icon">
-            <path d="M12 2L2 7l10 5 10-5-10-5z"></path>
-            <path d="M2 17l10 5 10-5"></path>
-            <path d="M2 12l10 5 10-5"></path>
-          </svg>
-          <h3 style="margin: 0; text-align: center;">Premium Features Unlocked!</h3>
-        </div>
-        <p>You're enjoying all premium features for free during our launch period. No time limit on your test cases!</p>
-        <p class="promo-small">Premium features include unlimited test cases, all export formats, and enhanced detection.</p>
+    <div class="promo-content">
+      <div class="promo-header">
+        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="promo-icon">
+          <path d="M12 2L2 7l10 5 10-5-10-5z"></path>
+          <path d="M2 17l10 5 10-5"></path>
+          <path d="M2 12l10 5 10-5"></path>
+        </svg>
+        <h3 style="margin: 0; text-align: center; color: var(--teal); font-weight: 600;">Premium Features Unlocked!</h3>
       </div>
-    `
+      <p>You're enjoying all premium features for free during our launch period. No time limit on your test cases!</p>
+      <p class="promo-small">Premium features include unlimited test cases, all export formats, and enhanced detection.</p>
+    </div>
+  `
 
     // Show the banner
     elements.upgradeBanner.classList.remove("hidden")
@@ -1172,12 +1172,6 @@ document.addEventListener("DOMContentLoaded", () => {
     gtag = () => {
       console.log("gtag function called", arguments)
     }
-  }
-})
-
-
-    // You can also implement your own analytics here
-    console.log(`Analytics: ${event}, ${category}, ${label}`)
   }
 })
 
