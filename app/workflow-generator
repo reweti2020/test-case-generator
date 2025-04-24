@@ -1,0 +1,165 @@
+"use client"
+
+import { useState } from "react"
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
+import { Textarea } from "@/components/ui/textarea"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { PlusCircle, Trash2 } from "lucide-react"
+
+export default function WorkflowGenerator() {
+  const [workflowName, setWorkflowName] = useState("")
+  const [workflowDescription, setWorkflowDescription] = useState("")
+  const [steps, setSteps] = useState([{ action: "", expected: "" }])
+  const [preconditions, setPreconditions] = useState("")
+  const [priority, setPriority] = useState("Medium")
+
+  const addStep = () => {
+    setSteps([...steps, { action: "", expected: "" }])
+  }
+
+  const removeStep = (index: number) => {
+    const newSteps = [...steps]
+    newSteps.splice(index, 1)
+    setSteps(newSteps)
+  }
+
+  const updateStep = (index: number, field: "action" | "expected", value: string) => {
+    const newSteps = [...steps]
+    newSteps[index][field] = value
+    setSteps(newSteps)
+  }
+
+  const generateWorkflow = () => {
+    if (!workflowName) {
+      alert("Please enter a workflow name")
+      return
+    }
+
+    if (steps.some((step) => !step.action || !step.expected)) {
+      alert("Please fill in all step actions and expected results")
+      return
+    }
+
+    // Here you would typically send this data to your API
+    const workflowData = {
+      name: workflowName,
+      description: workflowDescription,
+      preconditions,
+      priority,
+      steps: steps.map((step, index) => ({
+        step: index + 1,
+        action: step.action,
+        expected: step.expected,
+      })),
+    }
+
+    console.log("Generated workflow:", workflowData)
+    alert("Workflow generated successfully!")
+  }
+
+  return (
+    <Card className="w-full">
+      <CardHeader>
+        <CardTitle>Workflow Test Generator</CardTitle>
+        <CardDescription>Create end-to-end workflow test cases that span multiple pages or features</CardDescription>
+      </CardHeader>
+      <CardContent>
+        <div className="space-y-6">
+          <div className="space-y-2">
+            <Label htmlFor="workflowName">Workflow Name</Label>
+            <Input
+              id="workflowName"
+              placeholder="e.g., User Registration Flow"
+              value={workflowName}
+              onChange={(e) => setWorkflowName(e.target.value)}
+            />
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="workflowDescription">Description</Label>
+            <Textarea
+              id="workflowDescription"
+              placeholder="Describe the purpose of this workflow test"
+              value={workflowDescription}
+              onChange={(e) => setWorkflowDescription(e.target.value)}
+            />
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="preconditions">Preconditions</Label>
+            <Textarea
+              id="preconditions"
+              placeholder="List any preconditions required for this test"
+              value={preconditions}
+              onChange={(e) => setPreconditions(e.target.value)}
+            />
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="priority">Priority</Label>
+            <Select value={priority} onValueChange={setPriority}>
+              <SelectTrigger id="priority">
+                <SelectValue placeholder="Select priority" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="High">High</SelectItem>
+                <SelectItem value="Medium">Medium</SelectItem>
+                <SelectItem value="Low">Low</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="space-y-4">
+            <div className="flex justify-between items-center">
+              <Label>Workflow Steps</Label>
+              <Button type="button" variant="outline" size="sm" onClick={addStep}>
+                <PlusCircle className="h-4 w-4 mr-2" />
+                Add Step
+              </Button>
+            </div>
+
+            {steps.map((step, index) => (
+              <div key={index} className="space-y-3 p-4 border rounded-md">
+                <div className="flex justify-between items-center">
+                  <h4 className="font-medium">Step {index + 1}</h4>
+                  {steps.length > 1 && (
+                    <Button type="button" variant="ghost" size="sm" onClick={() => removeStep(index)}>
+                      <Trash2 className="h-4 w-4 text-red-500" />
+                    </Button>
+                  )}
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor={`step-${index}-action`}>Action</Label>
+                  <Textarea
+                    id={`step-${index}-action`}
+                    placeholder="What action should be performed"
+                    value={step.action}
+                    onChange={(e) => updateStep(index, "action", e.target.value)}
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor={`step-${index}-expected`}>Expected Result</Label>
+                  <Textarea
+                    id={`step-${index}-expected`}
+                    placeholder="What should happen after the action"
+                    value={step.expected}
+                    onChange={(e) => updateStep(index, "expected", e.target.value)}
+                  />
+                </div>
+              </div>
+            ))}
+          </div>
+
+          <Button type="button" className="w-full" onClick={generateWorkflow}>
+            Generate Workflow Test
+          </Button>
+        </div>
+      </CardContent>
+    </Card>
+  )
+}
