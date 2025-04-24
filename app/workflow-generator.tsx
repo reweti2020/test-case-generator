@@ -1,6 +1,7 @@
 "use client"
 
 import type React from "react"
+  
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 
 const WorkflowGenerator: React.FC = () => {
