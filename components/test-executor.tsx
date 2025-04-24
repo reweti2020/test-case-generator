@@ -1,12 +1,14 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
-import { Loader2, Play, CheckCircle, XCircle } from "lucide-react"
+import { Loader2, Play, CheckCircle, XCircle, Save, Upload } from 'lucide-react'
 import { Badge } from "@/components/ui/badge"
 import { Progress } from "@/components/ui/progress"
 import { ScrollArea } from "@/components/ui/scroll-area"
+import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion"
+import { Alert, AlertDescription } from "@/components/ui/alert"
 
 interface TestCase {
   id: string
@@ -31,6 +33,13 @@ interface TestResult {
   executionTime?: number
   failureReason?: string
   logs?: string[]
+  stepResults?: {
+    step: number
+    description: string
+    expected?: string
+    passed: boolean
+    details: string
+  }[]
 }
 
 export default function TestExecutor({ testCases, url }: TestExecutorProps) {
@@ -38,6 +47,20 @@ export default function TestExecutor({ testCases, url }: TestExecutorProps) {
   const [isExecuting, setIsExecuting] = useState(false)
   const [currentTestIndex, setCurrentTestIndex] = useState(-1)
   const [logs, setLogs] = useState<string[]>([])
+  const [savedResults, setSavedResults] = useState<{ date: string, results: Record<string, TestResult>, url: string }[]>([])
+  const [expandedTests, setExpandedTests] = useState<Record<string, boolean>>({})
+
+  // Load saved results on component mount
+  useEffect(() => {
+    const saved = localStorage.getItem('testResults')
+    if (saved) {
+      try {
+        setSavedResults(JSON.parse(saved))
+      } catch (e) {
+        console.error('Failed to parse saved test results', e)
+      }
+    }
+  }, [])
 
   const executeTest = async (testCase: TestCase, index: number) => {
     setCurrentTestIndex(index)
@@ -58,6 +81,7 @@ export default function TestExecutor({ testCases, url }: TestExecutorProps) {
           testId: testCase.id,
           platform: "web",
           url: url,
+          testCase: testCase, // Send the full test case for better execution
         }),
       })
 
@@ -80,6 +104,7 @@ export default function TestExecutor({ testCases, url }: TestExecutorProps) {
           executionTime: data.executionTime,
           failureReason: data.failureReason,
           logs: data.logs,
+          stepResults: data.stepResults,
         },
       }))
     } catch (error: any) {
@@ -116,6 +141,82 @@ export default function TestExecutor({ testCases, url }: TestExecutorProps) {
     setLogs((prev) => [...prev, `[${new Date().toLocaleTimeString()}] Test execution completed`])
     setIsExecuting(false)
     setCurrentTestIndex(-1)
+  }
+
+  const saveResults = () => {
+    if (Object.keys(results).length === 0) return
+
+    const newSavedResults = [
+      ...savedResults,
+      {
+        date: new Date().toISOString(),
+        results: { ...results },
+        url: url
+      }
+    ]
+
+    // Save to localStorage
+    localStorage.setItem('testResults', JSON.stringify(newSavedResults))
+    setSavedResults(newSavedResults)
+
+    // Show notification or feedback
+    setLogs((prev) => [...prev, `[${new Date().toLocaleTimeString()}] Test results saved successfully`])
+  }
+
+  const exportResults = () => {
+    if (Object.keys(results).length === 0) return
+
+    const resultsData = {
+      date: new Date().toISOString(),
+      url: url,
+      results: { ...results },
+      testCases: testCases
+    }
+
+    const blob = new Blob([JSON.stringify(resultsData, null, 2)], { type: 'application/json' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `test-results-${new Date().toISOString().slice(0, 10)}.json`
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    URL.revokeObjectURL(url)
+
+    setLogs((prev) => [...prev, `[${new Date().toLocaleTimeString()}] Test results exported to file`])
+  }
+
+  const importResults = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0]
+    if (!file) return
+
+    const reader = new FileReader()
+    reader.onload = (e) => {
+      try {
+        const importedData = JSON.parse(e.target?.result as string)
+        
+        if (importedData.results && importedData.testCases) {
+          setResults(importedData.results)
+          setLogs([
+            `[${new Date().toLocaleTimeString()}] Imported test results from ${importedData.date}`,
+            `[${new Date().toLocaleTimeString()}] URL: ${importedData.url}`,
+            `[${new Date().toLocaleTimeString()}] ${Object.keys(importedData.results).length} test results loaded`
+          ])
+        } else {
+          throw new Error('Invalid test results file format')
+        }
+      } catch (error: any) {
+        setLogs((prev) => [...prev, `[ERROR] Failed to import results: ${error.message}`])
+      }
+    }
+    reader.readAsText(file)
+  }
+
+  const toggleTestExpansion = (testId: string) => {
+    setExpandedTests(prev => ({
+      ...prev,
+      [testId]: !prev[testId]
+    }))
   }
 
   const getResultCounts = () => {
@@ -159,26 +260,61 @@ export default function TestExecutor({ testCases, url }: TestExecutorProps) {
         <CardDescription>Execute generated test cases against the website.</CardDescription>
       </CardHeader>
       <CardContent className="space-y-6">
-        <div className="flex justify-between items-center">
+        <div className="flex justify-between items-center flex-wrap gap-4">
           <div className="space-y-1">
             <h3 className="text-sm font-medium">Test Suite</h3>
             <p className="text-sm text-muted-foreground">
               {testCases.length} test cases for {url}
             </p>
           </div>
-          <Button onClick={executeAllTests} disabled={isExecuting}>
-            {isExecuting ? (
-              <>
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                Executing...
-              </>
-            ) : (
-              <>
-                <Play className="mr-2 h-4 w-4" />
-                Execute All Tests
-              </>
-            )}
-          </Button>
+          <div className="flex gap-2 flex-wrap">
+            <Button onClick={executeAllTests} disabled={isExecuting}>
+              {isExecuting ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Executing...
+                </>
+              ) : (
+                <>
+                  <Play className="mr-2 h-4 w-4" />
+                  Execute All Tests
+                </>
+              )}
+            </Button>
+            
+            <Button 
+              variant="outline" 
+              onClick={saveResults} 
+              disabled={Object.keys(results).length === 0}
+            >
+              <Save className="mr-2 h-4 w-4" />
+              Save Results
+            </Button>
+            
+            <Button 
+              variant="outline" 
+              onClick={exportResults} 
+              disabled={Object.keys(results).length === 0}
+            >
+              Export Results
+            </Button>
+            
+            <div className="relative">
+              <input
+                type="file"
+                id="import-results"
+                className="absolute inset-0 opacity-0 w-full cursor-pointer"
+                accept=".json"
+                onChange={importResults}
+              />
+              <Button variant="outline" asChild>
+                <label htmlFor="import-results" className="cursor-pointer">
+                  <Upload className="mr-2 h-4 w-4" />
+                  Import Results
+                </label>
+              </Button>
+            </div>
+          </div>
         </div>
 
         {isExecuting || Object.keys(results).length > 0 ? (
@@ -217,36 +353,76 @@ export default function TestExecutor({ testCases, url }: TestExecutorProps) {
               <div className="divide-y">
                 {testCases.map((testCase, index) => {
                   const result = results[testCase.id] || { status: "pending" }
+                  const isExpanded = expandedTests[testCase.id] || false
+                  
                   return (
                     <div
                       key={testCase.id}
-                      className={`p-3 flex items-center justify-between ${
+                      className={`p-3 ${
                         currentTestIndex === index ? "bg-muted/30" : ""
                       }`}
                     >
-                      <div className="flex items-center gap-2">
-                        {result.status === "passed" && <CheckCircle className="h-5 w-5 text-green-500" />}
-                        {result.status === "failed" && <XCircle className="h-5 w-5 text-red-500" />}
-                        {result.status === "running" && <Loader2 className="h-5 w-5 text-blue-500 animate-spin" />}
-                        {result.status === "pending" && <div className="h-5 w-5 rounded-full border border-gray-300" />}
-                        <span className="font-medium">{testCase.title}</span>
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2 cursor-pointer" onClick={() => toggleTestExpansion(testCase.id)}>
+                          {result.status === "passed" && <CheckCircle className="h-5 w-5 text-green-500" />}
+                          {result.status === "failed" && <XCircle className="h-5 w-5 text-red-500" />}
+                          {result.status === "running" && <Loader2 className="h-5 w-5 text-blue-500 animate-spin" />}
+                          {result.status === "pending" && <div className="h-5 w-5 rounded-full border border-gray-300" />}
+                          <span className="font-medium">{testCase.title}</span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          {result.executionTime && (
+                            <span className="text-sm text-muted-foreground">{result.executionTime}ms</span>
+                          )}
+                          <Badge
+                            variant={
+                              result.status === "passed"
+                                ? "success"
+                                : result.status === "failed"
+                                  ? "destructive"
+                                  : "outline"
+                            }
+                          >
+                            {result.status.charAt(0).toUpperCase() + result.status.slice(1)}
+                          </Badge>
+                        </div>
                       </div>
-                      <div className="flex items-center gap-2">
-                        {result.executionTime && (
-                          <span className="text-sm text-muted-foreground">{result.executionTime}ms</span>
-                        )}
-                        <Badge
-                          variant={
-                            result.status === "passed"
-                              ? "success"
-                              : result.status === "failed"
-                                ? "destructive"
-                                : "outline"
-                          }
-                        >
-                          {result.status.charAt(0).toUpperCase() + result.status.slice(1)}
-                        </Badge>
-                      </div>
+                      
+                      {isExpanded && result.stepResults && (
+                        <div className="mt-4 pl-7">
+                          <h4 className="text-sm font-medium mb-2">Step Results:</h4>
+                          <div className="space-y-2">
+                            {result.stepResults.map((stepResult, idx) => (
+                              <div key={idx} className={`p-2 rounded-md ${stepResult.passed ? 'bg-green-500/10' : 'bg-red-500/10'}`}>
+                                <div className="flex justify-between">
+                                  <span className="font-medium">Step {stepResult.step}: {stepResult.description}</span>
+                                  <Badge variant={stepResult.passed ? "success" : "destructive"}>
+                                    {stepResult.passed ? "Passed" : "Failed"}
+                                  </Badge>
+                                </div>
+                                {stepResult.expected && (
+                                  <div className="text-sm text-muted-foreground mt-1">
+                                    Expected: {stepResult.expected}
+                                  </div>
+                                )}
+                                <div className="text-sm mt-1">
+                                  {stepResult.details}
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                      
+                      {isExpanded && result.failureReason && !result.stepResults && (
+                        <div className="mt-4 pl-7">
+                          <Alert variant="destructive">
+                            <AlertDescription>
+                              {result.failureReason}
+                            </AlertDescription>
+                          </Alert>
+                        </div>
+                      )}
                     </div>
                   )
                 })}
@@ -266,6 +442,43 @@ export default function TestExecutor({ testCases, url }: TestExecutorProps) {
                 )}
               </ScrollArea>
             </div>
+            
+            {savedResults.length > 0 && (
+              <div className="border rounded-md">
+                <div className="p-3 border-b bg-muted/50 font-medium">Saved Test Results</div>
+                <Accordion type="single" collapsible className="w-full">
+                  {savedResults.map((savedResult, index) => (
+                    <AccordionItem key={index} value={`item-${index}`}>
+                      <AccordionTrigger className="px-4">
+                        {new Date(savedResult.date).toLocaleString()} - {savedResult.url}
+                      </AccordionTrigger>
+                      <AccordionContent className="px-4">
+                        <div className="space-y-2">
+                          <div className="flex gap-2 flex-wrap">
+                            <Badge variant="outline" className="bg-green-500/10">
+                              Passed: {Object.values(savedResult.results).filter(r => r.status === "passed").length}
+                            </Badge>
+                            <Badge variant="outline" className="bg-red-500/10">
+                              Failed: {Object.values(savedResult.results).filter(r => r.status === "failed").length}
+                            </Badge>
+                          </div>
+                          <Button 
+                            variant="outline" 
+                            size="sm" 
+                            onClick={() => {
+                              setResults(savedResult.results)
+                              setLogs([`[${new Date().toLocaleTimeString()}] Loaded saved test results from ${new Date(savedResult.date).toLocaleString()}`])
+                            }}
+                          >
+                            Load Results
+                          </Button>
+                        </div>
+                      </AccordionContent>
+                    </AccordionItem>
+                  ))}
+                </Accordion>
+              </div>
+            )}
           </div>
         ) : (
           <div className="text-center py-8 text-muted-foreground">Click "Execute All Tests" to start testing.</div>
@@ -274,3 +487,4 @@ export default function TestExecutor({ testCases, url }: TestExecutorProps) {
     </Card>
   )
 }
+
