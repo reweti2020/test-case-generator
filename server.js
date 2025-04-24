@@ -28,13 +28,9 @@ app.post("/api/test", require("./api/test"))
 app.post("/api/debug-element", require("./api/debug-element"))
 app.post("/api/test-debug", require("./api/test-debug"))
 app.post("/api/test-executor", require("./api/test-executor"))
-app.post("/api/workflow-generator", (req, res) => {
-  // Mock implementation for workflow generator
-  res.status(200).json({
-    success: true,
-    message: "Workflow generator is under development",
-  })
-})
+app.post("/api/workflow-generator", require("./api/workflow-generator"))
+app.post("/api/mobile-test-generator", require("./api/mobile-test-generator"))
+
 
 // Global error handler
 app.use((err, req, res, next) => {
@@ -51,7 +47,7 @@ app.get("*", (req, res) => {
   res.sendFile(path.join(__dirname, "public", "index.html"))
 })
 
-// Only start the server if not running on Vercel
+// Start the server if not running on Vercel
 if (process.env.NODE_ENV !== "production") {
   app.listen(PORT, () => {
     console.log(`Server is running on port ${PORT}`)
@@ -60,5 +56,6 @@ if (process.env.NODE_ENV !== "production") {
 
 // Export for Vercel
 module.exports = app
+
 
 
