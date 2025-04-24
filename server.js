@@ -4,7 +4,6 @@
 const express = require("express")
 const path = require("path")
 const cors = require("cors")
-const { cleanupSessions } = require("./testGen")
 
 // Create Express app
 const app = express()
@@ -17,16 +16,25 @@ app.use(express.static(path.join(__dirname, "public")))
 
 // API endpoints
 app.post("/api/generate-incremental", require("./api/generate-incremental"))
-app.post("/api/export-tests", require("./api/export-test"))
-app.post("/api/create-checkout-session", require("./api/create-checkout-session"))
-app.post("/api/test", require("./api/test")) // Simple test endpoint
+app.post("/api/export-test", require("./api/export-test"))
+app.post("/api/create-checkout-session", (req, res) => {
+  // Mock implementation for checkout
+  res.status(200).json({
+    success: true,
+    id: "mock-session-" + Math.random().toString(36).substring(2, 10),
+  })
+})
+app.post("/api/test", require("./api/test"))
 app.post("/api/debug-element", require("./api/debug-element"))
-
-// Regular cleanup of old sessions (every hour)
-setInterval(() => {
-  console.log("Cleaning up old sessions...")
-  cleanupSessions(3600000) // 1 hour
-}, 3600000)
+app.post("/api/test-debug", require("./api/test-debug"))
+app.post("/api/test-executor", require("./api/test-executor"))
+app.post("/api/workflow-generator", (req, res) => {
+  // Mock implementation for workflow generator
+  res.status(200).json({
+    success: true,
+    message: "Workflow generator is under development",
+  })
+})
 
 // Global error handler
 app.use((err, req, res, next) => {
@@ -38,22 +46,18 @@ app.use((err, req, res, next) => {
   })
 })
 
-// Serve the HTML page
-app.get("/", (req, res) => {
-  res.sendFile(path.join(__dirname, "public", "index.html"))
-})
-
-// Success page (for payment success)
-app.get("/success", (req, res) => {
-  res.sendFile(path.join(__dirname, "public", "success.html"))
-})
-
-// Fallback route for SPA
+// Serve the HTML page for all other routes (SPA fallback)
 app.get("*", (req, res) => {
   res.sendFile(path.join(__dirname, "public", "index.html"))
 })
 
-// Start the server
-app.listen(PORT, () => {
-  console.log(`Server is running on port ${PORT}`)
-})
+// Only start the server if not running on Vercel
+if (process.env.NODE_ENV !== "production") {
+  app.listen(PORT, () => {
+    console.log(`Server is running on port ${PORT}`)
+  })
+}
+
+// Export for Vercel
+module.exports = app
+
