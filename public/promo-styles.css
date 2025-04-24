@@ -3,7 +3,7 @@
  * Add these styles to your existing style.css file or include as a separate stylesheet
  */
 
-.promo-banner {
+ .promo-banner {
   background-color: rgba(32, 197, 198, 0.15);
   border-bottom: 1px solid var(--teal);
   color: var(--text);

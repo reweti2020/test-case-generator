@@ -10,39 +10,39 @@
  * @returns {String} - YAML content for Maestro Studio
  */
 function exportToMaestro(pageData, testCases) {
-  const maestroAppId = pageData.url.replace(/https?:\/\//, '').replace(/\/$/, '');
-  
-  let yamlContent = `appId: ${maestroAppId}\n---\n`;
-  yamlContent += `- launchUrl: ${pageData.url}\n`;
-  yamlContent += `- assertVisible: "${pageData.title}"\n\n`;
-  
-  testCases.forEach(testCase => {
+  const maestroAppId = pageData.url.replace(/https?:\/\//, "").replace(/\/$/, "")
+
+  let yamlContent = `appId: ${maestroAppId}\n---\n`
+  yamlContent += `- launchUrl: ${pageData.url}\n`
+  yamlContent += `- assertVisible: "${pageData.title}"\n\n`
+
+  testCases.forEach((testCase) => {
     // Add test case as a comment
-    yamlContent += `# ${testCase.title}\n`;
-    
+    yamlContent += `# ${testCase.title}\n`
+
     // Convert steps to Maestro flow steps
-    testCase.steps.forEach(step => {
+    testCase.steps.forEach((step) => {
       // Skip the navigation step if it's not the first test case
-      if (step.step === 1 && step.action.includes('Navigate to') && testCases.indexOf(testCase) > 0) {
-        return;
+      if (step.step === 1 && step.action.includes("Navigate to") && testCases.indexOf(testCase) > 0) {
+        return
       }
-      
+
       // Parse the action to create Maestro commands
-      if (step.action.includes('Click')) {
-        yamlContent += `- tapOn: "${extractElementName(step.action)}"\n`;
-      } else if (step.action.includes('Enter')) {
-        const inputField = extractInputField(step.action);
-        yamlContent += `- inputText: "test_value"\n`;
-        yamlContent += `  into: "${inputField}"\n`;
-      } else if (step.action.includes('Verify')) {
-        yamlContent += `- assertVisible: "${extractExpectedText(step.expected)}"\n`;
+      if (step.action.includes("Click")) {
+        yamlContent += `- tapOn: "${extractElementName(step.action)}"\n`
+      } else if (step.action.includes("Enter")) {
+        const inputField = extractInputField(step.action)
+        yamlContent += `- inputText: "test_value"\n`
+        yamlContent += `  into: "${inputField}"\n`
+      } else if (step.action.includes("Verify")) {
+        yamlContent += `- assertVisible: "${extractExpectedText(step.expected)}"\n`
       }
-    });
-    
-    yamlContent += '\n';
-  });
-  
-  return yamlContent;
+    })
+
+    yamlContent += "\n"
+  })
+
+  return yamlContent
 }
 
 /**
@@ -52,34 +52,34 @@ function exportToMaestro(pageData, testCases) {
  * @returns {String} - XML content for Katalon Studio
  */
 function exportToKatalon(pageData, testCases) {
-  let katalon = '';
-  
+  let katalon = ""
+
   testCases.forEach((testCase, index) => {
-    const testCaseId = testCase.id.replace('TC_', '');
-    const guid = generateGuid();
-    
-    katalon += `<?xml version="1.0" encoding="UTF-8"?>\n`;
-    katalon += `<TestCaseEntity>\n`;
-    katalon += `   <name>${testCase.id}</name>\n`;
-    katalon += `   <tag></tag>\n`;
-    katalon += `   <comment>${testCase.description}</comment>\n`;
-    katalon += `   <testCaseGuid>${guid}</testCaseGuid>\n`;
-    
+    const testCaseId = testCase.id.replace("TC_", "")
+    const guid = generateGuid()
+
+    katalon += `<?xml version="1.0" encoding="UTF-8"?>\n`
+    katalon += `<TestCaseEntity>\n`
+    katalon += `   <name>${testCase.id}</name>\n`
+    katalon += `   <tag></tag>\n`
+    katalon += `   <comment>${testCase.description}</comment>\n`
+    katalon += `   <testCaseGuid>${guid}</testCaseGuid>\n`
+
     // Add variables if needed
-    if (testCase.title.includes('Form') || testCase.title.includes('Input')) {
-      katalon += `   <variable>\n`;
-      katalon += `      <name>testValue</name>\n`;
-      katalon += `      <value>sample_value</value>\n`;
-      katalon += `   </variable>\n`;
+    if (testCase.title.includes("Form") || testCase.title.includes("Input")) {
+      katalon += `   <variable>\n`
+      katalon += `      <name>testValue</name>\n`
+      katalon += `      <value>sample_value</value>\n`
+      katalon += `   </variable>\n`
     }
-    
-    katalon += `</TestCaseEntity>\n\n`;
-    
+
+    katalon += `</TestCaseEntity>\n\n`
+
     // Generate script content as well
-    katalon += generateKatalonScript(testCase, pageData.url);
-  });
-  
-  return katalon;
+    katalon += generateKatalonScript(testCase, pageData.url)
+  })
+
+  return katalon
 }
 
 /**
@@ -89,32 +89,32 @@ function exportToKatalon(pageData, testCases) {
  * @returns {String} - CSV content for TestRail
  */
 function exportToTestRail(pageData, testCases) {
-  let csv = 'Title,Type,Priority,Preconditions,Steps,Expected Result,References\n';
-  
-  testCases.forEach(testCase => {
-    const title = escapeCsvField(testCase.title);
-    const type = 'Functional';
-    const priority = escapeCsvField(testCase.priority);
-    const preconditions = 'None';
-    
+  let csv = "Title,Type,Priority,Preconditions,Steps,Expected Result,References\n"
+
+  testCases.forEach((testCase) => {
+    const title = escapeCsvField(testCase.title)
+    const type = "Functional"
+    const priority = escapeCsvField(testCase.priority)
+    const preconditions = "None"
+
     // Collect steps and expected results
-    let steps = '';
-    let expectedResults = '';
-    
-    testCase.steps.forEach(step => {
-      steps += `${step.step}. ${step.action}\n`;
-      expectedResults += `${step.step}. ${step.expected}\n`;
-    });
-    
+    let steps = ""
+    let expectedResults = ""
+
+    testCase.steps.forEach((step) => {
+      steps += `${step.step}. ${step.action}\n`
+      expectedResults += `${step.step}. ${step.expected}\n`
+    })
+
     // Escape and format
-    const stepsFormatted = escapeCsvField(steps.trim());
-    const expectedFormatted = escapeCsvField(expectedResults.trim());
-    const references = testCase.id;
-    
-    csv += `${title},${type},${priority},${preconditions},${stepsFormatted},${expectedFormatted},${references}\n`;
-  });
-  
-  return csv;
+    const stepsFormatted = escapeCsvField(steps.trim())
+    const expectedFormatted = escapeCsvField(expectedResults.trim())
+    const references = testCase.id
+
+    csv += `${title},${type},${priority},${preconditions},${stepsFormatted},${expectedFormatted},${references}\n`
+  })
+
+  return csv
 }
 
 /**
@@ -149,9 +149,9 @@ function exportToHtml(pageData, testCases) {
   <p>URL: ${pageData.url}</p>
   <p>Generated: ${new Date().toLocaleString()}</p>
   
-  <div class="test-cases">`;
-  
-  testCases.forEach(testCase => {
+  <div class="test-cases">`
+
+  testCases.forEach((testCase) => {
     html += `
     <div class="test-case priority-${testCase.priority}">
       <h2>${testCase.title}</h2>
@@ -168,29 +168,29 @@ function exportToHtml(pageData, testCases) {
             <th>Expected Result</th>
           </tr>
         </thead>
-        <tbody>`;
-    
-    testCase.steps.forEach(step => {
+        <tbody>`
+
+    testCase.steps.forEach((step) => {
       html += `
           <tr>
             <td>${step.step}</td>
             <td>${step.action}</td>
             <td>${step.expected}</td>
-          </tr>`;
-    });
-    
+          </tr>`
+    })
+
     html += `
         </tbody>
       </table>
-    </div>`;
-  });
-  
+    </div>`
+  })
+
   html += `
   </div>
 </body>
-</html>`;
-  
-  return html;
+</html>`
+
+  return html
 }
 
 /**
@@ -200,26 +200,26 @@ function exportToHtml(pageData, testCases) {
  * @returns {String} - Plain text content
  */
 function exportToPlainText(pageData, testCases) {
-  let text = `TEST CASES FOR ${pageData.title.toUpperCase()}\n`;
-  text += `URL: ${pageData.url}\n`;
-  text += `Generated: ${new Date().toLocaleString()}\n\n`;
-  
-  testCases.forEach(testCase => {
-    text += `ID: ${testCase.id}\n`;
-    text += `TITLE: ${testCase.title}\n`;
-    text += `DESCRIPTION: ${testCase.description}\n`;
-    text += `PRIORITY: ${testCase.priority}\n\n`;
-    
-    text += `TEST STEPS:\n`;
-    testCase.steps.forEach(step => {
-      text += `${step.step}. ${step.action}\n`;
-      text += `   Expected: ${step.expected}\n\n`;
-    });
-    
-    text += `----------------------------\n\n`;
-  });
-  
-  return text;
+  let text = `TEST CASES FOR ${pageData.title.toUpperCase()}\n`
+  text += `URL: ${pageData.url}\n`
+  text += `Generated: ${new Date().toLocaleString()}\n\n`
+
+  testCases.forEach((testCase) => {
+    text += `ID: ${testCase.id}\n`
+    text += `TITLE: ${testCase.title}\n`
+    text += `DESCRIPTION: ${testCase.description}\n`
+    text += `PRIORITY: ${testCase.priority}\n\n`
+
+    text += `TEST STEPS:\n`
+    testCase.steps.forEach((step) => {
+      text += `${step.step}. ${step.action}\n`
+      text += `   Expected: ${step.expected}\n\n`
+    })
+
+    text += `----------------------------\n\n`
+  })
+
+  return text
 }
 
 // Helper functions
@@ -230,8 +230,8 @@ function exportToPlainText(pageData, testCases) {
  * @returns {String} - Escaped field
  */
 function escapeCsvField(field) {
-  let escaped = field.replace(/"/g, '""');
-  return `"${escaped}"`;
+  const escaped = field.replace(/"/g, '""')
+  return `"${escaped}"`
 }
 
 /**
@@ -239,11 +239,11 @@ function escapeCsvField(field) {
  * @returns {String} - A GUID string
  */
 function generateGuid() {
-  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
-    const r = Math.random() * 16 | 0;
-    const v = c === 'x' ? r : (r & 0x3 | 0x8);
-    return v.toString(16);
-  });
+  return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (c) => {
+    const r = (Math.random() * 16) | 0
+    const v = c === "x" ? r : (r & 0x3) | 0x8
+    return v.toString(16)
+  })
 }
 
 /**
@@ -252,11 +252,13 @@ function generateGuid() {
  * @returns {String} - Element name
  */
 function extractElementName(action) {
-  const buttonMatch = action.match(/(Click|Find|Submit) (?:button|link) (?:with text "([^"]+)"|with ID "([^"]+)"|(\d+))/i);
+  const buttonMatch = action.match(
+    /(Click|Find|Submit) (?:button|link) (?:with text "([^"]+)"|with ID "([^"]+)"|(\d+))/i,
+  )
   if (buttonMatch) {
-    return buttonMatch[2] || buttonMatch[3] || buttonMatch[4] || 'element';
+    return buttonMatch[2] || buttonMatch[3] || buttonMatch[4] || "element"
   }
-  return 'element';
+  return "element"
 }
 
 /**
@@ -265,11 +267,11 @@ function extractElementName(action) {
  * @returns {String} - Input field name
  */
 function extractInputField(action) {
-  const inputMatch = action.match(/input field (?:with ID "([^"]+)"|with name "([^"]+)")/i);
+  const inputMatch = action.match(/input field (?:with ID "([^"]+)"|with name "([^"]+)")/i)
   if (inputMatch) {
-    return inputMatch[1] || inputMatch[2] || 'input_field';
+    return inputMatch[1] || inputMatch[2] || "input_field"
   }
-  return 'input_field';
+  return "input_field"
 }
 
 /**
@@ -278,11 +280,11 @@ function extractInputField(action) {
  * @returns {String} - Expected visible text
  */
 function extractExpectedText(expected) {
-  const titleMatch = expected.match(/Title is "([^"]+)"/i);
+  const titleMatch = expected.match(/Title is "([^"]+)"/i)
   if (titleMatch) {
-    return titleMatch[1];
+    return titleMatch[1]
   }
-  return expected.replace(/"/g, '');
+  return expected.replace(/"/g, "")
 }
 
 /**
@@ -298,31 +300,31 @@ import com.kms.katalon.core.webui.keyword.WebUiBuiltInKeywords as WebUI
 // ${testCase.title}
 // ${testCase.description}
 
-`;
+`
 
-  testCase.steps.forEach(step => {
-    if (step.action.includes('Navigate to')) {
-      script += `// Step ${step.step}: ${step.action}\n`;
-      script += `WebUI.openBrowser('${baseUrl}')\n`;
-      script += `WebUI.maximizeWindow()\n\n`;
-    } else if (step.action.includes('Click')) {
-      const element = extractElementName(step.action);
-      script += `// Step ${step.step}: ${step.action}\n`;
-      script += `WebUI.click(findTestObject('Object Repository/${element}'))\n\n`;
-    } else if (step.action.includes('Enter')) {
-      const field = extractInputField(step.action);
-      script += `// Step ${step.step}: ${step.action}\n`;
-      script += `WebUI.setText(findTestObject('Object Repository/${field}'), 'test_value')\n\n`;
-    } else if (step.action.includes('Verify')) {
-      const text = extractExpectedText(step.expected);
-      script += `// Step ${step.step}: ${step.action}\n`;
-      script += `WebUI.verifyTextPresent('${text}', false)\n\n`;
+  testCase.steps.forEach((step) => {
+    if (step.action.includes("Navigate to")) {
+      script += `// Step ${step.step}: ${step.action}\n`
+      script += `WebUI.openBrowser('${baseUrl}')\n`
+      script += `WebUI.maximizeWindow()\n\n`
+    } else if (step.action.includes("Click")) {
+      const element = extractElementName(step.action)
+      script += `// Step ${step.step}: ${step.action}\n`
+      script += `WebUI.click(findTestObject('Object Repository/${element}'))\n\n`
+    } else if (step.action.includes("Enter")) {
+      const field = extractInputField(step.action)
+      script += `// Step ${step.step}: ${step.action}\n`
+      script += `WebUI.setText(findTestObject('Object Repository/${field}'), 'test_value')\n\n`
+    } else if (step.action.includes("Verify")) {
+      const text = extractExpectedText(step.expected)
+      script += `// Step ${step.step}: ${step.action}\n`
+      script += `WebUI.verifyTextPresent('${text}', false)\n\n`
     }
-  });
-  
-  script += `// Close browser\nWebUI.closeBrowser()\n`;
-  
-  return script;
+  })
+
+  script += `// Close browser\nWebUI.closeBrowser()\n`
+
+  return script
 }
 
 // Export all the format functions
@@ -331,5 +333,5 @@ module.exports = {
   exportToKatalon,
   exportToTestRail,
   exportToHtml,
-  exportToPlainText
-};
+  exportToPlainText,
+}

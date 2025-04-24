@@ -1,19 +1,19 @@
 // api/export-test.js
-const axios = require('axios');
+const axios = require("axios")
 
 // Reference to the in-memory page cache from generate-incremental.js
 // Note: This approach has limitations in serverless environments due to cold starts
 // In production, use a database or cache service like Redis
-let pageCache = {};
+let pageCache = {}
 
 // Try to access the pageCache from the global scope if it exists
 try {
-  const generateIncremental = require('./generate-incremental');
+  const generateIncremental = require("./generate-incremental")
   if (generateIncremental.pageCache) {
-    pageCache = generateIncremental.pageCache;
+    pageCache = generateIncremental.pageCache
   }
 } catch (error) {
-  console.log('Could not import pageCache from generate-incremental, using empty cache');
+  console.log("Could not import pageCache from generate-incremental, using empty cache")
 }
 
 /**
@@ -21,35 +21,38 @@ try {
  */
 module.exports = async (req, res) => {
   // Enable CORS
-  res.setHeader('Access-Control-Allow-Credentials', true);
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS,PATCH,DELETE,POST,PUT');
-  res.setHeader('Access-Control-Allow-Headers', 'X-CSRF-Token, X-Requested-With, Accept, Accept-Version, Content-Length, Content-MD5, Content-Type, Date, X-Api-Version, Authorization');
-  
+  res.setHeader("Access-Control-Allow-Credentials", true)
+  res.setHeader("Access-Control-Allow-Origin", "*")
+  res.setHeader("Access-Control-Allow-Methods", "GET,OPTIONS,PATCH,DELETE,POST,PUT")
+  res.setHeader(
+    "Access-Control-Allow-Headers",
+    "X-CSRF-Token, X-Requested-With, Accept, Accept-Version, Content-Length, Content-MD5, Content-Type, Date, X-Api-Version, Authorization",
+  )
+
   // Handle OPTIONS request
-  if (req.method === 'OPTIONS') {
-    return res.status(200).end();
+  if (req.method === "OPTIONS") {
+    return res.status(200).end()
   }
-  
+
   // Log the start of the function to help with debugging
-  console.log('[API] Processing export-test request');
-  
+  console.log("[API] Processing export-test request")
+
   try {
-    const { sessionId, format } = req.body || {};
-    
+    const { sessionId, format } = req.body || {}
+
     // Log the request parameters
-    console.log(`Request params: ${JSON.stringify({ sessionId, format })}`);
-    
+    console.log(`Request params: ${JSON.stringify({ sessionId, format })}`)
+
     // Force pro access for testing
-    const userPlan = 'pro';
-    
+    const userPlan = "pro"
+
     if (!sessionId || !pageCache[sessionId]) {
       return res.status(400).json({
         success: false,
-        error: 'Invalid or expired session ID'
-      });
+        error: "Invalid or expired session ID",
+      })
     }
-    
+
     // Premium format check disabled for testing
     // const premiumFormats = ['maestro', 'katalon', 'testrail', 'csv', 'html'];
     // if (userPlan === 'free' && premiumFormats.includes(format)) {
@@ -59,158 +62,158 @@ module.exports = async (req, res) => {
     //     upgradeRequired: true
     //   });
     // }
-    
-    const sessionData = pageCache[sessionId];
-    let exportData = null;
-    let filename = 'test-cases';
-    let contentType = 'application/json';
-    
-    switch (format) {
-      case 'maestro':
-        exportData = exportToMaestro(sessionData.pageData, sessionData.testCases);
-        filename = 'maestro-flow.yaml';
-        contentType = 'application/yaml';
-        break;
-        
-      case 'katalon':
-        exportData = exportToKatalon(sessionData.pageData, sessionData.testCases);
-        filename = 'katalon-tests.tc';
-        contentType = 'application/octet-stream';
-        break;
-        
-      case 'testrail':
-        exportData = exportToTestRail(sessionData.pageData, sessionData.testCases);
-        filename = 'testrail-import.csv';
-        contentType = 'text/csv';
-        break;
-        
-      case 'html':
-        exportData = exportToHtml(sessionData.pageData, sessionData.testCases);
-        filename = 'test-cases.html';
-        contentType = 'text/html';
-        break;
-        
-      case 'txt':
-        exportData = exportToPlainText(sessionData.pageData, sessionData.testCases);
-        filename = 'test-cases.txt';
-        contentType = 'text/plain';
-        break;
 
-      case 'json':
+    const sessionData = pageCache[sessionId]
+    let exportData = null
+    let filename = "test-cases"
+    let contentType = "application/json"
+
+    switch (format) {
+      case "maestro":
+        exportData = exportToMaestro(sessionData.pageData, sessionData.testCases)
+        filename = "maestro-flow.yaml"
+        contentType = "application/yaml"
+        break
+
+      case "katalon":
+        exportData = exportToKatalon(sessionData.pageData, sessionData.testCases)
+        filename = "katalon-tests.tc"
+        contentType = "application/octet-stream"
+        break
+
+      case "testrail":
+        exportData = exportToTestRail(sessionData.pageData, sessionData.testCases)
+        filename = "testrail-import.csv"
+        contentType = "text/csv"
+        break
+
+      case "html":
+        exportData = exportToHtml(sessionData.pageData, sessionData.testCases)
+        filename = "test-cases.html"
+        contentType = "text/html"
+        break
+
+      case "txt":
+        exportData = exportToPlainText(sessionData.pageData, sessionData.testCases)
+        filename = "test-cases.txt"
+        contentType = "text/plain"
+        break
+
+      case "json":
       default:
-        exportData = JSON.stringify(sessionData.testCases, null, 2);
-        filename = 'test-cases.json';
-        contentType = 'application/json';
+        exportData = JSON.stringify(sessionData.testCases, null, 2)
+        filename = "test-cases.json"
+        contentType = "application/json"
     }
-    
+
     return res.status(200).json({
       success: true,
       exportData,
       filename,
-      contentType
-    });
+      contentType,
+    })
   } catch (error) {
-    console.error('Error in export-test:', error);
+    console.error("Error in export-test:", error)
     return res.status(500).json({
       success: false,
-      error: `Export error: ${error.message || 'Unknown error'}`
-    });
+      error: `Export error: ${error.message || "Unknown error"}`,
+    })
   }
-};
+}
 
 /**
  * Convert test cases to Maestro Studio format
  */
 function exportToMaestro(pageData, testCases) {
-  const maestroAppId = pageData.url.replace(/https?:\/\//, '').replace(/\/$/, '');
-  
-  let yamlContent = `appId: ${maestroAppId}\n---\n`;
-  yamlContent += `- launchUrl: ${pageData.url}\n`;
-  yamlContent += `- assertVisible: "${pageData.title}"\n\n`;
-  
-  testCases.forEach(testCase => {
-    yamlContent += `# ${testCase.title}\n`;
-    
-    testCase.steps.forEach(step => {
-      if (step.step === 1 && step.action.includes('Navigate to') && testCases.indexOf(testCase) > 0) {
-        return;
+  const maestroAppId = pageData.url.replace(/https?:\/\//, "").replace(/\/$/, "")
+
+  let yamlContent = `appId: ${maestroAppId}\n---\n`
+  yamlContent += `- launchUrl: ${pageData.url}\n`
+  yamlContent += `- assertVisible: "${pageData.title}"\n\n`
+
+  testCases.forEach((testCase) => {
+    yamlContent += `# ${testCase.title}\n`
+
+    testCase.steps.forEach((step) => {
+      if (step.step === 1 && step.action.includes("Navigate to") && testCases.indexOf(testCase) > 0) {
+        return
       }
-      
-      if (step.action.includes('Click')) {
-        yamlContent += `- tapOn: "${extractElementName(step.action)}"\n`;
-      } else if (step.action.includes('Enter')) {
-        const inputField = extractInputField(step.action);
-        yamlContent += `- inputText: "test_value"\n`;
-        yamlContent += `  into: "${inputField}"\n`;
-      } else if (step.action.includes('Verify')) {
-        yamlContent += `- assertVisible: "${extractExpectedText(step.expected)}"\n`;
+
+      if (step.action.includes("Click")) {
+        yamlContent += `- tapOn: "${extractElementName(step.action)}"\n`
+      } else if (step.action.includes("Enter")) {
+        const inputField = extractInputField(step.action)
+        yamlContent += `- inputText: "test_value"\n`
+        yamlContent += `  into: "${inputField}"\n`
+      } else if (step.action.includes("Verify")) {
+        yamlContent += `- assertVisible: "${extractExpectedText(step.expected)}"\n`
       }
-    });
-    
-    yamlContent += '\n';
-  });
-  
-  return yamlContent;
+    })
+
+    yamlContent += "\n"
+  })
+
+  return yamlContent
 }
 
 /**
  * Convert test cases to Katalon Studio format
  */
 function exportToKatalon(pageData, testCases) {
-  let katalon = '';
-  
+  let katalon = ""
+
   testCases.forEach((testCase, index) => {
-    const testCaseId = testCase.id.replace('TC_', '');
-    const guid = generateGuid();
-    
-    katalon += `<?xml version="1.0" encoding="UTF-8"?>\n`;
-    katalon += `<TestCaseEntity>\n`;
-    katalon += `   <name>${testCase.id}</name>\n`;
-    katalon += `   <tag></tag>\n`;
-    katalon += `   <comment>${testCase.description}</comment>\n`;
-    katalon += `   <testCaseGuid>${guid}</testCaseGuid>\n`;
-    
-    if (testCase.title.includes('Form') || testCase.title.includes('Input')) {
-      katalon += `   <variable>\n`;
-      katalon += `      <name>testValue</name>\n`;
-      katalon += `      <value>sample_value</value>\n`;
-      katalon += `   </variable>\n`;
+    const testCaseId = testCase.id.replace("TC_", "")
+    const guid = generateGuid()
+
+    katalon += `<?xml version="1.0" encoding="UTF-8"?>\n`
+    katalon += `<TestCaseEntity>\n`
+    katalon += `   <name>${testCase.id}</name>\n`
+    katalon += `   <tag></tag>\n`
+    katalon += `   <comment>${testCase.description}</comment>\n`
+    katalon += `   <testCaseGuid>${guid}</testCaseGuid>\n`
+
+    if (testCase.title.includes("Form") || testCase.title.includes("Input")) {
+      katalon += `   <variable>\n`
+      katalon += `      <name>testValue</name>\n`
+      katalon += `      <value>sample_value</value>\n`
+      katalon += `   </variable>\n`
     }
-    
-    katalon += `</TestCaseEntity>\n\n`;
-  });
-  
-  return katalon;
+
+    katalon += `</TestCaseEntity>\n\n`
+  })
+
+  return katalon
 }
 
 /**
  * Convert test cases to TestRail CSV format
  */
 function exportToTestRail(pageData, testCases) {
-  let csv = 'Title,Type,Priority,Preconditions,Steps,Expected Result,References\n';
-  
-  testCases.forEach(testCase => {
-    const title = escapeCsvField(testCase.title);
-    const type = 'Functional';
-    const priority = escapeCsvField(testCase.priority);
-    const preconditions = 'None';
-    
-    let steps = '';
-    let expectedResults = '';
-    
-    testCase.steps.forEach(step => {
-      steps += `${step.step}. ${step.action}\n`;
-      expectedResults += `${step.step}. ${step.expected}\n`;
-    });
-    
-    const stepsFormatted = escapeCsvField(steps.trim());
-    const expectedFormatted = escapeCsvField(expectedResults.trim());
-    const references = testCase.id;
-    
-    csv += `${title},${type},${priority},${preconditions},${stepsFormatted},${expectedFormatted},${references}\n`;
-  });
-  
-  return csv;
+  let csv = "Title,Type,Priority,Preconditions,Steps,Expected Result,References\n"
+
+  testCases.forEach((testCase) => {
+    const title = escapeCsvField(testCase.title)
+    const type = "Functional"
+    const priority = escapeCsvField(testCase.priority)
+    const preconditions = "None"
+
+    let steps = ""
+    let expectedResults = ""
+
+    testCase.steps.forEach((step) => {
+      steps += `${step.step}. ${step.action}\n`
+      expectedResults += `${step.step}. ${step.expected}\n`
+    })
+
+    const stepsFormatted = escapeCsvField(steps.trim())
+    const expectedFormatted = escapeCsvField(expectedResults.trim())
+    const references = testCase.id
+
+    csv += `${title},${type},${priority},${preconditions},${stepsFormatted},${expectedFormatted},${references}\n`
+  })
+
+  return csv
 }
 
 /**
@@ -242,9 +245,9 @@ function exportToHtml(pageData, testCases) {
   <p>URL: ${pageData.url}</p>
   <p>Generated: ${new Date().toLocaleString()}</p>
   
-  <div class="test-cases">`;
-  
-  testCases.forEach(testCase => {
+  <div class="test-cases">`
+
+  testCases.forEach((testCase) => {
     html += `
     <div class="test-case priority-${testCase.priority}">
       <h2>${testCase.title}</h2>
@@ -261,91 +264,93 @@ function exportToHtml(pageData, testCases) {
             <th>Expected Result</th>
           </tr>
         </thead>
-        <tbody>`;
-    
-    testCase.steps.forEach(step => {
+        <tbody>`
+
+    testCase.steps.forEach((step) => {
       html += `
           <tr>
             <td>${step.step}</td>
             <td>${step.action}</td>
             <td>${step.expected}</td>
-          </tr>`;
-    });
-    
+          </tr>`
+    })
+
     html += `
         </tbody>
       </table>
-    </div>`;
-  });
-  
+    </div>`
+  })
+
   html += `
   </div>
 </body>
-</html>`;
-  
-  return html;
+</html>`
+
+  return html
 }
 
 /**
  * Generate plain text export format
  */
 function exportToPlainText(pageData, testCases) {
-  let text = `TEST CASES FOR ${pageData.title.toUpperCase()}\n`;
-  text += `URL: ${pageData.url}\n`;
-  text += `Generated: ${new Date().toLocaleString()}\n\n`;
-  
-  testCases.forEach(testCase => {
-    text += `ID: ${testCase.id}\n`;
-    text += `TITLE: ${testCase.title}\n`;
-    text += `DESCRIPTION: ${testCase.description}\n`;
-    text += `PRIORITY: ${testCase.priority}\n\n`;
-    
-    text += `TEST STEPS:\n`;
-    testCase.steps.forEach(step => {
-      text += `${step.step}. ${step.action}\n`;
-      text += `   Expected: ${step.expected}\n\n`;
-    });
-    
-    text += `----------------------------\n\n`;
-  });
-  
-  return text;
+  let text = `TEST CASES FOR ${pageData.title.toUpperCase()}\n`
+  text += `URL: ${pageData.url}\n`
+  text += `Generated: ${new Date().toLocaleString()}\n\n`
+
+  testCases.forEach((testCase) => {
+    text += `ID: ${testCase.id}\n`
+    text += `TITLE: ${testCase.title}\n`
+    text += `DESCRIPTION: ${testCase.description}\n`
+    text += `PRIORITY: ${testCase.priority}\n\n`
+
+    text += `TEST STEPS:\n`
+    testCase.steps.forEach((step) => {
+      text += `${step.step}. ${step.action}\n`
+      text += `   Expected: ${step.expected}\n\n`
+    })
+
+    text += `----------------------------\n\n`
+  })
+
+  return text
 }
 
 // Helper functions
 function escapeCsvField(field) {
-  let escaped = field.replace(/"/g, '""');
-  return `"${escaped}"`;
+  const escaped = field.replace(/"/g, '""')
+  return `"${escaped}"`
 }
 
 function generateGuid() {
-  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
-    const r = Math.random() * 16 | 0;
-    const v = c === 'x' ? r : (r & 0x3 | 0x8);
-    return v.toString(16);
-  });
+  return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (c) => {
+    const r = (Math.random() * 16) | 0
+    const v = c === "x" ? r : (r & 0x3) | 0x8
+    return v.toString(16)
+  })
 }
 
 function extractElementName(action) {
-  const buttonMatch = action.match(/(Click|Find|Submit) (?:button|link) (?:with text "([^"]+)"|with ID "([^"]+)"|(\d+))/i);
+  const buttonMatch = action.match(
+    /(Click|Find|Submit) (?:button|link) (?:with text "([^"]+)"|with ID "([^"]+)"|(\d+))/i,
+  )
   if (buttonMatch) {
-    return buttonMatch[2] || buttonMatch[3] || buttonMatch[4] || 'element';
+    return buttonMatch[2] || buttonMatch[3] || buttonMatch[4] || "element"
   }
-  return 'element';
+  return "element"
 }
 
 function extractInputField(action) {
-  const inputMatch = action.match(/input field (?:with ID "([^"]+)"|with name "([^"]+)")/i);
+  const inputMatch = action.match(/input field (?:with ID "([^"]+)"|with name "([^"]+)")/i)
   if (inputMatch) {
-    return inputMatch[1] || inputMatch[2] || 'input_field';
+    return inputMatch[1] || inputMatch[2] || "input_field"
   }
-  return 'input_field';
+  return "input_field"
 }
 
 function extractExpectedText(expected) {
-  const titleMatch = expected.match(/Title is "([^"]+)"/i);
+  const titleMatch = expected.match(/Title is "([^"]+)"/i)
   if (titleMatch) {
-    return titleMatch[1];
+    return titleMatch[1]
   }
-  return expected.replace(/"/g, '');
+  return expected.replace(/"/g, "")
 }
