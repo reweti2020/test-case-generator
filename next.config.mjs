@@ -2,9 +2,8 @@
 const nextConfig = {
   reactStrictMode: true,
   swcMinify: true,
-  // Remove the experimental.appDir option as it's no longer needed in Next.js 14
   experimental: {
-    // appDir: true, // Remove this line
+    // Remove the appDir option completely
   },
   eslint: {
     ignoreDuringBuilds: true,
