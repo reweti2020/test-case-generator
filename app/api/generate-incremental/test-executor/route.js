@@ -1,21 +1,21 @@
 import { NextResponse } from "next/server"
-import puppeteer from "puppeteer"
+import * as cheerio from "cheerio"
 
 export async function POST(request) {
   try {
     const body = await request.json()
-    const { testId, platform, url, appId, appPlatform } = body || {}
+    const { testId, platform, url, testCase } = body || {}
 
     // Log the execution request
-    console.log(`Executing test ${testId} for ${platform} (${url || appId})`)
+    console.log(`Executing test ${testId} for ${platform} (${url})`)
 
-    // For web tests, we'll use Puppeteer to actually execute the test
+    // For web tests, we'll use fetch and cheerio to actually test the website
     if (platform === "web" && url) {
-      return await executeWebTest(testId, url)
+      return await executeWebTest(testId, url, testCase)
     }
 
     // For other platforms or if no URL provided, return a simulated result
-    return simulateTestExecution(testId, platform, url, appId)
+    return simulateTestExecution(testId, platform, url)
   } catch (error) {
     console.error("Error in test-executor:", error)
     return NextResponse.json({
@@ -26,267 +26,381 @@ export async function POST(request) {
 }
 
 /**
- * Execute a web test using Puppeteer
+ * Execute a web test using fetch and cheerio
  */
-async function executeWebTest(testId, url) {
+async function executeWebTest(testId, url, testCase) {
+  const startTime = Date.now()
   const logs = [`[INFO] Starting test execution for ${testId}`, `[INFO] Target URL: ${url}`]
-  let browser = null
-
+  
   try {
-    logs.push(`[INFO] Launching browser`)
-    browser = await puppeteer.launch({ headless: "new" })
-    const page = await browser.newPage()
+    logs.push(`[INFO] Fetching URL: ${url}`)
 
-    // Set viewport
-    await page.setViewport({ width: 1280, height: 800 })
+    // Fetch the website content
+    const response = await fetch(url, {
+      headers: {
+        "User-Agent":
+          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
+        Accept: "text/html,application/xhtml+xml,application/xml",
+        "Accept-Language": "en-US,en;q=0.9",
+      },
+      redirect: "follow",
+    })
 
-    // Navigate to the URL
-    logs.push(`[INFO] Navigating to ${url}`)
-    const response = await page.goto(url, { waitUntil: "domcontentloaded", timeout: 30000 })
-
-    if (!response.ok()) {
-      throw new Error(`Failed to load page: ${response.status()} ${response.statusText()}`)
+    if (!response.ok) {
+      throw new Error(`Failed to fetch URL (Status ${response.status})`)
     }
 
-    logs.push(`[INFO] Page loaded successfully`)
+    const html = await response.text()
+    logs.push(`[INFO] Page content fetched successfully (${html.length} bytes)`)
+
+    // Parse the HTML
+    const $ = cheerio.load(html)
+    logs.push(`[INFO] HTML parsed successfully`)
 
     // Get page title
-    const title = await page.title()
+    const title = $("title").text().trim()
     logs.push(`[INFO] Page title: "${title}"`)
 
-    // Take a screenshot for verification
-    await page.screenshot({ path: `/tmp/${testId}.png` })
-    logs.push(`[INFO] Screenshot captured`)
-
-    // Check for common elements
-    const buttonCount = await page.$$eval(
-      'button, input[type="submit"], input[type="button"], .btn, [role="button"]',
-      (els) => els.length,
-    )
-    logs.push(`[INFO] Found ${buttonCount} buttons/button-like elements`)
-
-    const linkCount = await page.$$eval("a[href]", (els) => els.length)
-    logs.push(`[INFO] Found ${linkCount} links`)
-
-    const formCount = await page.$$eval("form", (els) => els.length)
-    logs.push(`[INFO] Found ${formCount} forms`)
-
-    // Perform basic interaction based on test ID type
-    if (testId.includes("BTN")) {
-      // Try to find and click a button
-      const buttonFound = await clickRandomButton(page, logs)
-      if (!buttonFound) {
-        logs.push(`[WARNING] Could not find a suitable button to click`)
+    // Execute test steps if a full test case was provided
+    let stepResults = []
+    let allStepsPassed = true
+    
+    if (testCase && testCase.steps && testCase.steps.length > 0) {
+      logs.push(`[INFO] Executing ${testCase.steps.length} test steps`)
+      
+      for (const step of testCase.steps) {
+        const stepResult = await executeTestStep($, step, url, logs)
+        stepResults.push(stepResult)
+        
+        if (!stepResult.passed) {
+          allStepsPassed = false
+        }
       }
-    } else if (testId.includes("LINK")) {
-      // Try to find and hover over a link
-      const linkFound = await hoverRandomLink(page, logs)
-      if (!linkFound) {
-        logs.push(`[WARNING] Could not find a suitable link to hover`)
-      }
-    } else if (testId.includes("FORM")) {
-      // Try to find a form and fill a field
-      const formFound = await interactWithForm(page, logs)
-      if (!formFound) {
-        logs.push(`[WARNING] Could not find a suitable form to interact with`)
+    } else {
+      // Perform basic checks based on test ID type if no specific steps provided
+      if (testId.includes("BTN")) {
+        // Check for buttons
+        const buttons = $('button, input[type="submit"], input[type="button"], .btn, [role="button"]')
+        if (buttons.length > 0) {
+          const buttonText = $(buttons[0]).text().trim() || $(buttons[0]).val() || "Unnamed Button"
+          logs.push(`[INFO] Found button: "${buttonText}"`)
+          stepResults.push({
+            step: 1,
+            description: "Check for buttons",
+            passed: true,
+            details: `Found ${buttons.length} buttons`
+          })
+        } else {
+          logs.push(`[WARNING] No buttons found on the page`)
+          stepResults.push({
+            step: 1,
+            description: "Check for buttons",
+            passed: false,
+            details: "No buttons found on the page"
+          })
+          allStepsPassed = false
+        }
+      } else if (testId.includes("LINK")) {
+        // Check for links
+        const links = $("a[href]")
+        if (links.length > 0) {
+          const linkText = $(links[0]).text().trim() || "Unnamed Link"
+          const linkHref = $(links[0]).attr("href") || "#"
+          logs.push(`[INFO] Found link: "${linkText}" (${linkHref})`)
+          stepResults.push({
+            step: 1,
+            description: "Check for links",
+            passed: true,
+            details: `Found ${links.length} links`
+          })
+        } else {
+          logs.push(`[WARNING] No links found on the page`)
+          stepResults.push({
+            step: 1,
+            description: "Check for links",
+            passed: false,
+            details: "No links found on the page"
+          })
+          allStepsPassed = false
+        }
+      } else if (testId.includes("FORM")) {
+        // Check for forms
+        const forms = $("form")
+        if (forms.length > 0) {
+          const formInputs = $(forms[0]).find("input, textarea, select").length
+          logs.push(`[INFO] Found form with ${formInputs} input fields`)
+          stepResults.push({
+            step: 1,
+            description: "Check for forms",
+            passed: true,
+            details: `Found ${forms.length} forms with ${formInputs} input fields`
+          })
+        } else {
+          logs.push(`[WARNING] No forms found on the page`)
+          stepResults.push({
+            step: 1,
+            description: "Check for forms",
+            passed: false,
+            details: "No forms found on the page"
+          })
+          allStepsPassed = false
+        }
+      } else if (testId.includes("PAGE")) {
+        // Check page title
+        if (title) {
+          logs.push(`[INFO] Page title verification passed`)
+          stepResults.push({
+            step: 1,
+            description: "Verify page title",
+            passed: true,
+            details: `Page title: "${title}"`
+          })
+        } else {
+          logs.push(`[WARNING] Page has no title`)
+          stepResults.push({
+            step: 1,
+            description: "Verify page title",
+            passed: false,
+            details: "Page has no title"
+          })
+          allStepsPassed = false
+        }
       }
     }
 
-    logs.push(`[SUCCESS] Test completed successfully`)
+    const executionTime = Date.now() - startTime
+    
+    if (allStepsPassed) {
+      logs.push(`[SUCCESS] Test completed successfully in ${executionTime}ms`)
+    } else {
+      logs.push(`[FAILURE] Test failed in ${executionTime}ms`)
+    }
 
     return NextResponse.json({
       success: true,
       testId,
-      status: "passed",
-      executionTime: Math.floor(Math.random() * 1000) + 500, // Random time between 500-1500ms
+      status: allStepsPassed ? "passed" : "failed",
+      executionTime,
+      stepResults,
       timestamp: new Date().toISOString(),
       logs,
     })
   } catch (error) {
+    const executionTime = Date.now() - startTime
     logs.push(`[ERROR] Test failed: ${error.message}`)
 
     return NextResponse.json({
       success: true,
       testId,
       status: "failed",
+      executionTime,
       failureReason: error.message,
       timestamp: new Date().toISOString(),
       logs,
     })
-  } finally {
-    if (browser) {
-      logs.push(`[INFO] Closing browser`)
-      await browser.close()
+  }
+}
+
+/**
+ * Execute a single test step
+ */
+async function executeTestStep($, step, url, logs) {
+  const stepResult = {
+    step: step.step,
+    description: step.action,
+    expected: step.expected,
+    passed: false,
+    details: ""
+  }
+
+  try {
+    // Handle different types of steps
+    if (step.action.includes("Navigate to")) {
+      // Navigation step - we've already navigated to the URL
+      stepResult.passed = true
+      stepResult.details = "Navigation successful"
+      logs.push(`[INFO] Step ${step.step}: Navigation verified`)
+    } 
+    else if (step.action.includes("Verify page title")) {
+      // Title verification
+      const pageTitle = $("title").text().trim()
+      const expectedTitle = step.expected.replace(/^Title is "/, "").replace(/"$/, "")
+      
+      if (pageTitle.includes(expectedTitle) || expectedTitle.includes(pageTitle)) {
+        stepResult.passed = true
+        stepResult.details = `Title verified: "${pageTitle}"`
+        logs.push(`[INFO] Step ${step.step}: Title verification passed`)
+      } else {
+        stepResult.passed = false
+        stepResult.details = `Expected title "${expectedTitle}" but found "${pageTitle}"`
+        logs.push(`[WARNING] Step ${step.step}: Title verification failed`)
+      }
     }
-  }
-}
-
-/**
- * Click a random visible button on the page
- */
-async function clickRandomButton(page, logs) {
-  const buttons = await page.$$(
-    'button:not([disabled]), input[type="submit"]:not([disabled]), input[type="button"]:not([disabled]), .btn:not([disabled]), [role="button"]:not([disabled])',
-  )
-
-  if (buttons.length === 0) return false
-
-  // Select a random button
-  const randomIndex = Math.floor(Math.random() * buttons.length)
-  const button = buttons[randomIndex]
-
-  // Get button text
-  const buttonText = await page.evaluate((el) => {
-    return el.innerText || el.value || "Unnamed Button"
-  }, button)
-
-  logs.push(`[INFO] Attempting to click button: "${buttonText}"`)
-
-  // Check if button is visible
-  const isVisible = await page.evaluate((el) => {
-    const style = window.getComputedStyle(el)
-    return style && style.display !== "none" && style.visibility !== "hidden" && style.opacity !== "0"
-  }, button)
-
-  if (isVisible) {
-    // Scroll button into view
-    await button.scrollIntoView()
-    logs.push(`[INFO] Button is visible, scrolling into view`)
-
-    // Wait a moment
-    await page.waitForTimeout(500)
-
-    // Click the button
-    await button.click({ delay: 100 })
-    logs.push(`[INFO] Button clicked successfully`)
-
-    // Wait for any navigation or DOM changes
-    await page.waitForTimeout(1000)
-
-    return true
-  } else {
-    logs.push(`[INFO] Button is not visible, skipping click`)
-    return false
-  }
-}
-
-/**
- * Hover over a random visible link on the page
- */
-async function hoverRandomLink(page, logs) {
-  const links = await page.$$("a[href]")
-
-  if (links.length === 0) return false
-
-  // Select a random link
-  const randomIndex = Math.floor(Math.random() * links.length)
-  const link = links[randomIndex]
-
-  // Get link text and href
-  const linkInfo = await page.evaluate((el) => {
-    return {
-      text: el.innerText || "Unnamed Link",
-      href: el.getAttribute("href"),
+    else if (step.action.includes("Locate")) {
+      // Element location
+      let elementFound = false
+      let elementType = ""
+      
+      if (step.action.includes("button")) {
+        elementType = "button"
+        const buttons = $('button, input[type="submit"], input[type="button"], .btn, [role="button"]')
+        elementFound = buttons.length > 0
+        
+        // Try to find a specific button if mentioned
+        if (step.action.includes('with text "')) {
+          const buttonText = step.action.match(/with text "([^"]+)"/)[1]
+          const specificButton = buttons.filter((i, el) => $(el).text().trim().includes(buttonText))
+          elementFound = specificButton.length > 0
+        } else if (step.action.includes('with ID "')) {
+          const buttonId = step.action.match(/with ID "([^"]+)"/)[1]
+          const specificButton = buttons.filter((i, el) => $(el).attr('id') === buttonId)
+          elementFound = specificButton.length > 0
+        }
+      } 
+      else if (step.action.includes("link")) {
+        elementType = "link"
+        const links = $("a[href]")
+        elementFound = links.length > 0
+        
+        // Try to find a specific link if mentioned
+        if (step.action.includes('with text "')) {
+          const linkText = step.action.match(/with text "([^"]+)"/)[1]
+          const specificLink = links.filter((i, el) => $(el).text().trim().includes(linkText))
+          elementFound = specificLink.length > 0
+        } else if (step.action.includes('with ID "')) {
+          const linkId = step.action.match(/with ID "([^"]+)"/)[1]
+          const specificLink = links.filter((i, el) => $(el).attr('id') === linkId)
+          elementFound = specificLink.length > 0
+        }
+      }
+      else if (step.action.includes("form")) {
+        elementType = "form"
+        const forms = $("form")
+        elementFound = forms.length > 0
+        
+        // Try to find a specific form if mentioned
+        if (step.action.includes('with ID "')) {
+          const formId = step.action.match(/with ID "([^"]+)"/)[1]
+          const specificForm = forms.filter((i, el) => $(el).attr('id') === formId)
+          elementFound = specificForm.length > 0
+        }
+      }
+      else if (step.action.includes("field")) {
+        elementType = "input field"
+        const inputs = $('input, textarea, select')
+        elementFound = inputs.length > 0
+        
+        // Try to find a specific input if mentioned
+        if (step.action.includes('with ID "')) {
+          const inputId = step.action.match(/with ID "([^"]+)"/)[1]
+          const specificInput = inputs.filter((i, el) => $(el).attr('id') === inputId)
+          elementFound = specificInput.length > 0
+        } else if (step.action.includes('with name "')) {
+          const inputName = step.action.match(/with name "([^"]+)"/)[1]
+          const specificInput = inputs.filter((i, el) => $(el).attr('name') === inputName)
+          elementFound = specificInput.length > 0
+        }
+      }
+      
+      if (elementFound) {
+        stepResult.passed = true
+        stepResult.details = `${elementType} found on page`
+        logs.push(`[INFO] Step ${step.step}: ${elementType} found`)
+      } else {
+        stepResult.passed = false
+        stepResult.details = `${elementType} not found on page`
+        logs.push(`[WARNING] Step ${step.step}: ${elementType} not found`)
+      }
     }
-  }, link)
-
-  logs.push(`[INFO] Attempting to hover over link: "${linkInfo.text}" (${linkInfo.href})`)
-
-  // Check if link is visible
-  const isVisible = await page.evaluate((el) => {
-    const style = window.getComputedStyle(el)
-    return style && style.display !== "none" && style.visibility !== "hidden" && style.opacity !== "0"
-  }, link)
-
-  if (isVisible) {
-    // Scroll link into view
-    await link.scrollIntoView()
-    logs.push(`[INFO] Link is visible, scrolling into view`)
-
-    // Wait a moment
-    await page.waitForTimeout(500)
-
-    // Hover over the link
-    await link.hover()
-    logs.push(`[INFO] Link hovered successfully`)
-
-    // Wait for any hover effects
-    await page.waitForTimeout(1000)
-
-    return true
-  } else {
-    logs.push(`[INFO] Link is not visible, skipping hover`)
-    return false
-  }
-}
-
-/**
- * Interact with a random form on the page
- */
-async function interactWithForm(page, logs) {
-  const forms = await page.$$("form")
-
-  if (forms.length === 0) return false
-
-  // Select a random form
-  const randomIndex = Math.floor(Math.random() * forms.length)
-  const form = forms[randomIndex]
-
-  // Find an input field in the form
-  const inputs = await form.$$('input[type="text"], input[type="email"], input[type="password"], textarea')
-
-  if (inputs.length === 0) {
-    logs.push(`[INFO] No input fields found in the form`)
-    return false
-  }
-
-  // Select a random input
-  const randomInputIndex = Math.floor(Math.random() * inputs.length)
-  const input = inputs[randomInputIndex]
-
-  // Get input type and name
-  const inputInfo = await page.evaluate((el) => {
-    return {
-      type: el.getAttribute("type") || "text",
-      name: el.getAttribute("name") || el.getAttribute("id") || "Unnamed Input",
-      placeholder: el.getAttribute("placeholder") || "",
+    else {
+      // For other steps that we can't actually execute (click, enter text, etc.)
+      // we'll just check if the relevant elements exist
+      if (step.action.includes("Click")) {
+        const elementText = step.action.replace(/Click the /, "").replace(/ button$/, "").replace(/ link$/, "").trim()
+        const buttons = $('button, input[type="submit"], input[type="button"], .btn, [role="button"]')
+        const links = $("a[href]")
+        
+        let elementFound = false
+        
+        // Check buttons
+        buttons.each((i, el) => {
+          const text = $(el).text().trim() || $(el).val() || ""
+          if (text.includes(elementText) || elementText.includes(text)) {
+            elementFound = true
+          }
+        })
+        
+        // Check links
+        if (!elementFound) {
+          links.each((i, el) => {
+            const text = $(el).text().trim() || ""
+            if (text.includes(elementText) || elementText.includes(text)) {
+              elementFound = true
+            }
+          })
+        }
+        
+        if (elementFound) {
+          stepResult.passed = true
+          stepResult.details = `Element "${elementText}" found on page`
+          logs.push(`[INFO] Step ${step.step}: Element for click action found`)
+        } else {
+          stepResult.passed = false
+          stepResult.details = `Element "${elementText}" not found on page`
+          logs.push(`[WARNING] Step ${step.step}: Element for click action not found`)
+        }
+      }
+      else if (step.action.includes("Enter")) {
+        // Check if the input field exists
+        const inputMatch = step.action.match(/Enter "[^"]+" (?:in|into) the ([^"]+) field/)
+        const fieldName = inputMatch ? inputMatch[1] : ""
+        
+        const inputs = $('input, textarea, select')
+        let inputFound = false
+        
+        inputs.each((i, el) => {
+          const id = $(el).attr('id') || ""
+          const name = $(el).attr('name') || ""
+          const placeholder = $(el).attr('placeholder') || ""
+          const label = $(`label[for="${id}"]`).text().trim() || ""
+          
+          if (id.includes(fieldName) || name.includes(fieldName) || 
+              placeholder.includes(fieldName) || label.includes(fieldName) ||
+              fieldName.includes(id) || fieldName.includes(name)) {
+            inputFound = true
+          }
+        })
+        
+        if (inputFound) {
+          stepResult.passed = true
+          stepResult.details = `Input field "${fieldName}" found on page`
+          logs.push(`[INFO] Step ${step.step}: Input field found`)
+        } else {
+          stepResult.passed = false
+          stepResult.details = `Input field "${fieldName}" not found on page`
+          logs.push(`[WARNING] Step ${step.step}: Input field not found`)
+        }
+      }
+      else {
+        // For other steps we can't verify, mark as skipped
+        stepResult.passed = true
+        stepResult.details = "Step verification skipped (simulation only)"
+        logs.push(`[INFO] Step ${step.step}: Verification skipped (simulation only)`)
+      }
     }
-  }, input)
-
-  logs.push(`[INFO] Attempting to fill input field: ${inputInfo.name} (${inputInfo.type})`)
-
-  // Scroll input into view
-  await input.scrollIntoView()
-  logs.push(`[INFO] Input field scrolled into view`)
-
-  // Wait a moment
-  await page.waitForTimeout(500)
-
-  // Determine test value based on input type
-  let testValue = "Test Value"
-  if (inputInfo.type === "email") {
-    testValue = "test@example.com"
-  } else if (inputInfo.type === "password") {
-    testValue = "SecurePassword123"
-  } else if (inputInfo.placeholder.toLowerCase().includes("search")) {
-    testValue = "search query"
+  } catch (error) {
+    stepResult.passed = false
+    stepResult.details = `Error: ${error.message}`
+    logs.push(`[ERROR] Step ${step.step}: ${error.message}`)
   }
-
-  // Fill the input
-  await input.click({ clickCount: 3 }) // Triple click to select all existing text
-  await input.type(testValue, { delay: 50 })
-  logs.push(`[INFO] Input field filled with value: "${testValue}"`)
-
-  // Wait a moment
-  await page.waitForTimeout(500)
-
-  return true
+  
+  return stepResult
 }
 
 /**
- * Simulate test execution for non-web tests or when real execution is not possible
+ * Simulate test execution for when real execution is not possible
  */
-function simulateTestExecution(testId, platform, url, appId) {
+function simulateTestExecution(testId, platform, url) {
   // Simulate test execution delay
   const passed = Math.random() > 0.3
 
@@ -317,8 +431,9 @@ function simulateTestExecution(testId, platform, url, appId) {
     logs: [
       `[INFO] Starting test execution for ${testId}`,
       `[INFO] Platform: ${platform}`,
-      `[INFO] Target: ${url || appId}`,
+      `[INFO] Target: ${url}`,
       passed ? `[SUCCESS] Test completed successfully` : `[ERROR] Test failed: ${failureReason}`,
     ],
   })
 }
+
