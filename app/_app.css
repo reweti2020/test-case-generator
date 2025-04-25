@@ -1,0 +1,33 @@
+/* VelocityQA forceful overrides */
+body {
+  background-color: #0f172a !important;
+  color: #f8fafc !important;
+}
+
+/* Button overrides */
+button, 
+.button-primary, 
+.btn-primary,
+[class*="Button-"] {
+  background-color: #20C5C6 !important;
+  color: white !important;
+}
+
+/* Card overrides */
+[class*="card"],
+[class*="Card"] {
+  background-color: #1e293b !important;
+  border-color: #334155 !important;
+}
+
+/* Tab overrides */
+[role="tablist"] {
+  background-color: #1e293b !important;
+}
+
+/* Form field overrides */
+input, select, textarea {
+  background-color: #0f172a !important;
+  border-color: #334155 !important;
+  color: #f8fafc !important;
+}
