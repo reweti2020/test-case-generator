@@ -1,93 +1,87 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
-@import './_app.css';
 
-@layer base {
-  :root {
-    /* Convert VelocityQA exact hex colors to HSL */
-    --background: 222 47% 11%; /* #0f172a */
-    --foreground: 210 40% 98%; /* #f8fafc */
-
-    --card: 217 33% 17%; /* #1e293b */
-    --card-foreground: 210 40% 98%; /* #f8fafc */
-
-    --popover: 222 47% 11%; /* #0f172a */
-    --popover-foreground: 210 40% 98%; /* #f8fafc */
-
-    /* VelocityQA teal color #20C5C6 */
-    --primary: 180 74% 45%;
-    --primary-foreground: 0 0% 100%;
-
-    /* VelocityQA orange accent #ff5500 */
-    --secondary: 19 100% 50%;
-    --secondary-foreground: 0 0% 100%;
-
-    --muted: 217 33% 17%; /* #1e293b */
-    --muted-foreground: 215 20% 65%; /* #94a3b8 */
-
-    --accent: 217 33% 17%; /* #1e293b */
-    --accent-foreground: 210 40% 98%; /* #f8fafc */
-
-    --destructive: 0 85% 60%; /* #ef4444 */
-    --destructive-foreground: 210 40% 98%;
-
-    --border: 215 25% 27%; /* #334155 */
-    --input: 217 33% 17%; /* #1e293b */
-    --ring: 180 74% 45%; /* #20C5C6 */
-
-    --radius: 0.5rem;
-
-    /* Color variables for special badge statuses */
-    --success: 160 84% 39%; /* #10b981 */
-    --success-foreground: 0 0% 100%;
-    
-    --warning: 27 100% 50%; /* #ff6b00 */
-    --warning-foreground: 0 0% 100%;
-  }
-
-  .dark {
-    /* Same colors for dark mode to ensure consistency */
-    --background: 222 47% 11%;
-    --foreground: 210 40% 98%;
-
-    --card: 217 33% 17%;
-    --card-foreground: 210 40% 98%;
-
-    --popover: 222 47% 11%;
-    --popover-foreground: 210 40% 98%;
-
-    --primary: 180 74% 45%; 
-    --primary-foreground: 0 0% 100%;
-
-    --secondary: 19 100% 50%;
-    --secondary-foreground: 0 0% 100%;
-
-    --muted: 217 33% 17%;
-    --muted-foreground: 215 20% 65%;
-
-    --accent: 217 33% 17%;
-    --accent-foreground: 210 40% 98%;
-
-    --destructive: 0 85% 60%;
-    --destructive-foreground: 210 40% 98%;
-
-    --border: 215 25% 27%;
-    --input: 217 33% 17%;
-    --ring: 180 74% 45%;
-  }
+:root {
+  /* VelocityQA dark theme */
+  --background: 222 47% 11%; /* #0f172a */
+  --foreground: 210 40% 98%; /* #f8fafc */
+  
+  --card: 217 33% 17%; /* #1e293b */
+  --card-foreground: 210 40% 98%; /* #f8fafc */
+  
+  --popover: 222 47% 11%; /* #0f172a */
+  --popover-foreground: 210 40% 98%; /* #f8fafc */
+  
+  /* VelocityQA teal */
+  --primary: 180 74% 45%; /* #20C5C6 */
+  --primary-foreground: 0 0% 100%; /* white */
+  
+  /* VelocityQA orange */
+  --secondary: 19 100% 50%; /* #ff5500 */
+  --secondary-foreground: 0 0% 100%; /* white */
+  
+  --muted: 217 33% 17%; /* #1e293b */
+  --muted-foreground: 215 20% 65%; /* #94a3b8 */
+  
+  --accent: 217 33% 17%; /* #1e293b */
+  --accent-foreground: 210 40% 98%; /* #f8fafc */
+  
+  --destructive: 0 85% 60%; /* #ef4444 */
+  --destructive-foreground: 210 40% 98%; /* #f8fafc */
+  
+  --border: 215 25% 27%; /* #334155 */
+  --input: 217 33% 17%; /* #1e293b */
+  --ring: 180 74% 45%; /* #20C5C6 */
+  
+  --radius: 0.5rem;
+  
+  /* Special badge statuses */
+  --success: 160 84% 39%; /* #10b981 */
+  --success-foreground: 0 0% 100%; /* white */
+  
+  --warning: 27 100% 50%; /* #ff6b00 */
+  --warning-foreground: 0 0% 100%; /* white */
 }
 
 @layer base {
   * {
     @apply border-border;
   }
+  
   body {
     @apply bg-background text-foreground;
   }
+  
+  /* Force proper button styling */
+  button[type="submit"], 
+  button[class*="button"],
+  .btn-primary {
+    @apply bg-primary text-primary-foreground hover:bg-primary/90;
+  }
+  
+  /* Proper styling for input fields */
+  input, select, textarea {
+    @apply bg-background border-border text-foreground;
+  }
+  
+  /* Tabs styling */
+  [role="tablist"] {
+    @apply bg-muted;
+  }
+  
+  [role="tab"][data-state="active"] {
+    @apply bg-background text-foreground;
+  }
+  
+  /* Card styling */
+  [class*="card"],
+  [class*="Card"] {
+    @apply bg-card border-border text-card-foreground;
+  }
 }
 
-/* Add extra badge variants */
+/* Badge variants */
 .badge-success {
   background-color: hsl(var(--success));
   color: hsl(var(--success-foreground));
@@ -98,21 +92,17 @@
   color: hsl(var(--warning-foreground));
 }
 
-/* Add custom animations */
+/* Custom animations */
 @keyframes pulse {
-  0%, 100% {
-    opacity: 1;
-  }
-  50% {
-    opacity: 0.5;
-  }
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
 }
 
 .animate-pulse {
   animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
 }
 
-/* Custom scrollbar styling */
+/* Custom scrollbar */
 ::-webkit-scrollbar {
   width: 8px;
   height: 8px;
@@ -130,4 +120,31 @@
 
 ::-webkit-scrollbar-thumb:hover {
   background: hsl(var(--muted-foreground));
+}
+
+/* Button styling overrides */
+.generate-button {
+  @apply bg-primary text-white hover:bg-primary/90;
+}
+
+.export-button, .action-button {
+  @apply bg-secondary text-white hover:bg-secondary/90;
+}
+
+/* Progress indicators */
+.progress-bar {
+  @apply bg-muted overflow-hidden;
+}
+
+.progress-fill {
+  @apply bg-primary;
+}
+
+/* Message styling */
+.success-message {
+  @apply text-success;
+}
+
+.error-message {
+  @apply text-destructive;
 }
