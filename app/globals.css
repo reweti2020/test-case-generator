@@ -4,41 +4,49 @@
 
 @layer base {
   :root {
-    --background: 222.2 84% 4.9%;
+    /* Dark theme background */
+    --background: 222 47% 11%;
     --foreground: 210 40% 98%;
 
-    --card: 217.2 32.6% 17.5%;
+    /* Card backgrounds */
+    --card: 217 33% 17%;
     --card-foreground: 210 40% 98%;
 
-    --popover: 222.2 84% 4.9%;
+    /* Popover / dropdown styling */
+    --popover: 222 47% 11%;
     --popover-foreground: 210 40% 98%;
 
-    /* VelocityQA teal color */
-    --primary: 180 74% 36%;
+    /* VelocityQA teal as primary */
+    --primary: 180 74% 45%;
     --primary-foreground: 0 0% 100%;
 
-    /* VelocityQA orange accent */
-    --secondary: 19 100% 50%;
+    /* VelocityQA orange as secondary */
+    --secondary: 20 100% 50%;
     --secondary-foreground: 0 0% 100%;
 
-    --muted: 217.2 32.6% 17.5%;
-    --muted-foreground: 215 20.2% 65.1%;
+    /* Muted elements */
+    --muted: 217 33% 17%;
+    --muted-foreground: 215 20% 65%;
 
-    --accent: 217.2 32.6% 17.5%;
+    /* Accent elements */
+    --accent: 217 33% 17%;
     --accent-foreground: 210 40% 98%;
 
-    --destructive: 0 62.8% 30.6%;
+    /* Destructive elements */
+    --destructive: 0 63% 31%;
     --destructive-foreground: 210 40% 98%;
 
-    --border: 217.2 32.6% 17.5%;
-    --input: 217.2 32.6% 17.5%;
-    --ring: 212.7 26.8% 83.9%;
+    /* Other UI elements */
+    --border: 217 33% 17%;
+    --input: 217 33% 17%;
+    --ring: 224 76% 48%;
 
+    /* Border radius */
     --radius: 0.5rem;
 
-    /* Color variables for special badge statuses */
-    --success: 142.1 76.2% 36.3%;
-    --success-foreground: 355.7 100% 97.3%;
+    /* Additional color variables */
+    --success: 142 70% 45%;
+    --success-foreground: 0 0% 100%;
     
     --warning: 38 92% 50%;
     --warning-foreground: 0 0% 100%;
@@ -99,3 +107,48 @@
   background: hsl(var(--muted-foreground));
 }
 
+/* Add VelocityQA specific styling */
+.upgrade-banner {
+  background-color: hsl(var(--background) / 0.6);
+  border: 1px solid hsl(var(--primary) / 0.5);
+  border-radius: var(--radius);
+  padding: 1.5rem;
+  margin-bottom: 2rem;
+  animation: fadeIn 0.5s ease-in-out;
+}
+
+.upgrade-content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 1rem;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.premium-tag::after {
+  content: "Free for a limited time";
+  position: absolute;
+  top: -20px;
+  left: 50%;
+  transform: translateX(-50%);
+  background-color: hsl(var(--secondary));
+  color: white;
+  font-size: 0.7rem;
+  font-weight: 600;
+  padding: 0.2rem 0.5rem;
+  border-radius: 3px;
+  white-space: nowrap;
+  opacity: 0;
+  transition: opacity 0.3s ease;
+  pointer-events: none;
+  z-index: 100;
+}
+
+.premium-tag:hover::after {
+  opacity: 1;
+}
