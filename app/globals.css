@@ -4,74 +4,74 @@
 
 @layer base {
   :root {
-    /* VelocityQA colors properly defined for shadcn/ui */
-    --background: 222 47% 11%;
-    --foreground: 210 40% 98%;
-    
-    --card: 217 33% 17%;
-    --card-foreground: 210 40% 98%;
-    
-    --popover: 222 47% 11%;
-    --popover-foreground: 210 40% 98%;
-    
-    /* VelocityQA teal as primary */
+    /* Convert VelocityQA exact hex colors to HSL */
+    --background: 222 47% 11%; /* #0f172a */
+    --foreground: 210 40% 98%; /* #f8fafc */
+
+    --card: 217 33% 17%; /* #1e293b */
+    --card-foreground: 210 40% 98%; /* #f8fafc */
+
+    --popover: 222 47% 11%; /* #0f172a */
+    --popover-foreground: 210 40% 98%; /* #f8fafc */
+
+    /* VelocityQA teal color #20C5C6 */
     --primary: 180 74% 45%;
     --primary-foreground: 0 0% 100%;
-    
-    /* VelocityQA orange accent */
-    --secondary: 20 100% 50%;
+
+    /* VelocityQA orange accent #ff5500 */
+    --secondary: 19 100% 50%;
     --secondary-foreground: 0 0% 100%;
-    
-    --muted: 217 33% 17%;
-    --muted-foreground: 215 20% 65%;
-    
-    --accent: 217 33% 17%;
-    --accent-foreground: 210 40% 98%;
-    
-    --destructive: 0 63% 31%;
+
+    --muted: 217 33% 17%; /* #1e293b */
+    --muted-foreground: 215 20% 65%; /* #94a3b8 */
+
+    --accent: 217 33% 17%; /* #1e293b */
+    --accent-foreground: 210 40% 98%; /* #f8fafc */
+
+    --destructive: 0 85% 60%; /* #ef4444 */
     --destructive-foreground: 210 40% 98%;
-    
-    --border: 217 33% 25%;
-    --input: 217 33% 17%;
-    --ring: 180 74% 45%;
-    
+
+    --border: 215 25% 27%; /* #334155 */
+    --input: 217 33% 17%; /* #1e293b */
+    --ring: 180 74% 45%; /* #20C5C6 */
+
     --radius: 0.5rem;
-    
-    /* Additional status colors */
-    --success: 142 70% 45%;
+
+    /* Color variables for special badge statuses */
+    --success: 160 84% 39%; /* #10b981 */
     --success-foreground: 0 0% 100%;
     
-    --warning: 38 92% 50%;
+    --warning: 27 100% 50%; /* #ff6b00 */
     --warning-foreground: 0 0% 100%;
   }
 
   .dark {
-    /* We're enforcing dark mode, so the same variables apply */
+    /* Same colors for dark mode to ensure consistency */
     --background: 222 47% 11%;
     --foreground: 210 40% 98%;
-    
+
     --card: 217 33% 17%;
     --card-foreground: 210 40% 98%;
-    
+
     --popover: 222 47% 11%;
     --popover-foreground: 210 40% 98%;
-    
-    --primary: 180 74% 45%;
+
+    --primary: 180 74% 45%; 
     --primary-foreground: 0 0% 100%;
-    
-    --secondary: 20 100% 50%;
+
+    --secondary: 19 100% 50%;
     --secondary-foreground: 0 0% 100%;
-    
+
     --muted: 217 33% 17%;
     --muted-foreground: 215 20% 65%;
-    
+
     --accent: 217 33% 17%;
     --accent-foreground: 210 40% 98%;
-    
-    --destructive: 0 63% 31%;
+
+    --destructive: 0 85% 60%;
     --destructive-foreground: 210 40% 98%;
-    
-    --border: 217 33% 25%;
+
+    --border: 215 25% 27%;
     --input: 217 33% 17%;
     --ring: 180 74% 45%;
   }
@@ -83,11 +83,10 @@
   }
   body {
     @apply bg-background text-foreground;
-    font-feature-settings: "rlig" 1, "calt" 1;
   }
 }
 
-/* Custom badge variants */
+/* Add extra badge variants */
 .badge-success {
   background-color: hsl(var(--success));
   color: hsl(var(--success-foreground));
@@ -98,7 +97,21 @@
   color: hsl(var(--warning-foreground));
 }
 
-/* Custom scrollbar */
+/* Add custom animations */
+@keyframes pulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
+  }
+}
+
+.animate-pulse {
+  animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+/* Custom scrollbar styling */
 ::-webkit-scrollbar {
   width: 8px;
   height: 8px;
@@ -116,62 +129,4 @@
 
 ::-webkit-scrollbar-thumb:hover {
   background: hsl(var(--muted-foreground));
-}
-
-/* Animation */
-@keyframes pulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.5; }
-}
-
-.animate-pulse {
-  animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
-}
-
-@keyframes fadeIn {
-  from { opacity: 0; }
-  to { opacity: 1; }
-}
-
-/* Premium tags and banners */
-.premium-tag {
-  position: relative;
-  display: inline-block;
-}
-
-.premium-tag::after {
-  content: "Free for a limited time";
-  position: absolute;
-  top: -20px;
-  left: 50%;
-  transform: translateX(-50%);
-  background-color: hsl(var(--secondary));
-  color: white;
-  font-size: 0.7rem;
-  font-weight: 600;
-  padding: 0.2rem 0.5rem;
-  border-radius: 3px;
-  white-space: nowrap;
-  opacity: 0;
-  transition: opacity 0.3s ease;
-  pointer-events: none;
-  z-index: 100;
-}
-
-.premium-tag:hover::after {
-  opacity: 1;
-}
-
-/* Promo banner */
-.promo-banner {
-  background-color: rgba(32, 197, 198, 0.15);
-  border-bottom: 1px solid hsl(var(--primary));
-  color: hsl(var(--foreground));
-  padding: 0.75rem 1rem;
-  text-align: center;
-  position: relative;
-  animation: fadeIn 0.5s ease-in-out;
-  display: flex;
-  justify-content: center;
-  align-items: center;
 }
