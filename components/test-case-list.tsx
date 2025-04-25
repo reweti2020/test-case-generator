@@ -1,256 +1,457 @@
 "use client"
 
-import { useState, useEffect } from "react"
-import { Card, CardContent, CardHeader } from "@/components/ui/card"
+import React, { useState, useEffect } from "react"
 import { Button } from "@/components/ui/button"
-import { ChevronDown, ChevronRight, Edit } from 'lucide-react'
-import { Badge } from "@/components/ui/badge"
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog"
+import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { Textarea } from "@/components/ui/textarea"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import TestCaseList from "@/components/test-case-list"
+import TestExecutor from "@/components/test-executor"
+import { Loader2, Download, Upload, Save } from 'lucide-react'
+import { Alert, AlertDescription } from "@/components/ui/alert"
 
-interface TestCase {
-  id: string
-  title: string
-  description: string
-  priority: string
-  steps: {
-    step: number
-    action: string
-    expected: string
-  }[]
-}
+export default function TestCaseGenerator() {
+  const [url, setUrl] = useState("")
+  const [format, setFormat] = useState("json")
+  const [isLoading, setIsLoading] = useState(false)
+  const [sessionId, setSessionId] = useState<string | null>(null)
+  const [testCases, setTestCases] = useState<any[]>([])
+  const [hasMoreElements, setHasMoreElements] = useState(false)
+  const [nextElementType, setNextElementType] = useState<string | null>(null)
+  const [nextElementIndex, setNextElementIndex] = useState(0)
+  const [totalTestCases, setTotalTestCases] = useState(0)
+  const [error, setError] = useState<string | null>(null)
+  const [successMessage, setSuccessMessage] = useState<string | null>(null)
 
-interface TestCaseListProps {
-  testCases: TestCase[]
-}
-
-export default function TestCaseList({ testCases }: TestCaseListProps) {
-  const [expandedCases, setExpandedCases] = useState<Record<string, boolean>>({})
-  const [editingCase, setEditingCase] = useState<TestCase | null>(null)
-  const [editedCase, setEditedCase] = useState<TestCase | null>(null)
-  const [corrections, setCorrections] = useState<Record<string, Record<string, any>>>({})
-
-  // Load corrections from localStorage on component mount
+  // Load saved test cases on component mount
   useEffect(() => {
-    const savedCorrections = localStorage.getItem("testCaseCorrections")
-    if (savedCorrections) {
+    const savedTestCases = localStorage.getItem('savedTestCases')
+    if (savedTestCases) {
       try {
-        setCorrections(JSON.parse(savedCorrections))
+        const parsed = JSON.parse(savedTestCases)
+        if (parsed.length > 0) {
+          setSuccessMessage("Previously saved test cases are available. Click 'Load Saved Tests' to view them.")
+        }
       } catch (e) {
-        console.error("Failed to parse saved corrections", e)
+        console.error('Failed to parse saved test cases', e)
       }
     }
   }, [])
 
-  const toggleExpand = (id: string) => {
-    setExpandedCases((prev) => ({
-      ...prev,
-      [id]: !prev[id],
-    }))
-  }
-
-  const handleEdit = (testCase: TestCase) => {
-    setEditingCase(testCase)
-    setEditedCase(JSON.parse(JSON.stringify(testCase)))
-  }
-
-  const handleSave = () => {
-    if (!editedCase) return
-
-    // In a real app, you would save this to your backend
-    // For now, we'll just update the UI
-    const index = testCases.findIndex((tc) => tc.id === editedCase.id)
-    if (index !== -1) {
-      testCases[index] = editedCase
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!url) {
+      setError("Please enter a valid URL")
+      return
     }
 
-    // Save to localStorage for persistence
-    const newCorrections = { ...corrections }
-    const currentUrl = window.location.href
-    
-    if (!newCorrections[currentUrl]) {
-      newCorrections[currentUrl] = {}
-    }
-    
-    newCorrections[currentUrl][editedCase.id] = editedCase
-    setCorrections(newCorrections)
-    localStorage.setItem("testCaseCorrections", JSON.stringify(newCorrections))
+    setIsLoading(true)
+    setError(null)
+    setTestCases([])
+    setSessionId(null)
+    setSuccessMessage(null)
 
-    setEditingCase(null)
+    try {
+      const response = await fetch("/api/generate-incremental", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          url,
+          mode: "first",
+          format,
+        }),
+      })
+
+      if (!response.ok) {
+        throw new Error(`Server responded with status: ${response.status}`)
+      }
+
+      const data = await response.json()
+
+      if (data.success) {
+        setSessionId(data.sessionId)
+        setTestCases(data.testCases || [])
+        setHasMoreElements(data.hasMoreElements)
+        setNextElementType(data.nextElementType)
+        setNextElementIndex(data.nextElementIndex)
+        setTotalTestCases(data.totalTestCases || (data.testCases ? data.testCases.length : 0))
+        setSuccessMessage("Test cases generated successfully!")
+      } else {
+        setError(`Error: ${data.error || "Unknown error occurred"}`)
+      }
+    } catch (error: any) {
+      setError(`Error: ${error.message || "Unknown error occurred"}`)
+    } finally {
+      setIsLoading(false)
+    }
   }
 
-  const handleStepChange = (index: number, field: "action" | "expected", value: string) => {
-    if (!editedCase) return
+  const handleGenerateMore = async () => {
+    if (!sessionId || !hasMoreElements) return
 
-    const newSteps = [...editedCase.steps]
-    newSteps[index] = {
-      ...newSteps[index],
-      [field]: value,
+    setIsLoading(true)
+    setError(null)
+    setSuccessMessage(null)
+
+    try {
+      const response = await fetch("/api/generate-incremental", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          mode: "next",
+          sessionId,
+          elementType: nextElementType,
+          elementIndex: nextElementIndex,
+          format,
+          batchSize: 5,
+        }),
+      })
+
+      if (!response.ok) {
+        throw new Error(`Server responded with status: ${response.status}`)
+      }
+
+      const data = await response.json()
+
+      if (data.success) {
+        setTestCases((prev) => [...prev, ...(data.testCases || [])])
+        setHasMoreElements(data.hasMoreElements)
+        setNextElementType(data.nextElementType)
+        setNextElementIndex(data.nextElementIndex)
+        setTotalTestCases(data.totalTestCases || testCases.length + (data.testCases?.length || 0))
+        setSuccessMessage("Additional test cases generated successfully!")
+      } else {
+        setError(`Error: ${data.error || "Unknown error occurred"}`)
+      }
+    } catch (error: any) {
+      setError(`Error: ${error.message || "Unknown error occurred"}`)
+    } finally {
+      setIsLoading(false)
     }
-
-    setEditedCase({
-      ...editedCase,
-      steps: newSteps,
-    })
   }
 
-  // Apply any saved corrections to test cases
-  const getCorrectedTestCase = (testCase: TestCase): TestCase => {
-    const currentUrl = window.location.href
-    
-    if (corrections[currentUrl] && corrections[currentUrl][testCase.id]) {
-      return corrections[currentUrl][testCase.id]
+  const handleExport = async (format: string) => {
+    if (!sessionId) return
+
+    try {
+      const response = await fetch("/api/export-test", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          sessionId,
+          format,
+        }),
+      })
+
+      if (!response.ok) {
+        throw new Error(`Server responded with status: ${response.status}`)
+      }
+
+      const data = await response.json()
+
+      if (data.success) {
+        // Create a blob and download the file
+        const blob = new Blob([data.exportData], { type: data.contentType })
+        const url = URL.createObjectURL(blob)
+        const a = document.createElement("a")
+        a.href = url
+        a.download = data.filename
+        document.body.appendChild(a)
+        a.click()
+        document.body.removeChild(a)
+        URL.revokeObjectURL(url)
+        setSuccessMessage(`Test cases exported as ${format.toUpperCase()} successfully!`)
+      } else {
+        setError(`Export error: ${data.error || "Unknown error"}`)
+      }
+    } catch (error: any) {
+      setError(`Export error: ${error.message || "Unknown error"}`)
     }
-    
-    return testCase
   }
 
-  if (testCases.length === 0) {
-    return <div className="text-center py-8 text-muted-foreground">No test cases generated yet.</div>
+  const saveTestCases = () => {
+    if (testCases.length === 0) return
+    
+    const testSuite = {
+      url,
+      sessionId,
+      testCases,
+      date: new Date().toISOString()
+    }
+    
+    // Get existing saved test suites
+    const savedTestCases = localStorage.getItem('savedTestCases')
+    let testSuites = []
+    
+    if (savedTestCases) {
+      try {
+        testSuites = JSON.parse(savedTestCases)
+      } catch (e) {
+        console.error('Failed to parse saved test cases', e)
+      }
+    }
+    
+    // Add new test suite
+    testSuites.push(testSuite)
+    
+    // Save back to localStorage
+    localStorage.setItem('savedTestCases', JSON.stringify(testSuites))
+    setSuccessMessage("Test cases saved successfully!")
+  }
+  
+  const loadSavedTestCases = () => {
+    const savedTestCases = localStorage.getItem('savedTestCases')
+    if (!savedTestCases) {
+      setError("No saved test cases found")
+      return
+    }
+    
+    try {
+      const testSuites = JSON.parse(savedTestCases)
+      if (testSuites.length === 0) {
+        setError("No saved test cases found")
+        return
+      }
+      
+      // Load the most recent test suite
+      const latestTestSuite = testSuites[testSuites.length - 1]
+      setUrl(latestTestSuite.url)
+      setSessionId(latestTestSuite.sessionId)
+      setTestCases(latestTestSuite.testCases)
+      setSuccessMessage(`Loaded test cases for ${latestTestSuite.url} from ${new Date(latestTestSuite.date).toLocaleString()}`)
+    } catch (e) {
+      setError("Failed to load saved test cases")
+      console.error('Failed to parse saved test cases', e)
+    }
+  }
+  
+  const exportTestCasesAsJson = () => {
+    if (testCases.length === 0) return
+    
+    const testSuite = {
+      url,
+      testCases,
+      date: new Date().toISOString()
+    }
+    
+    const blob = new Blob([JSON.stringify(testSuite, null, 2)], { type: 'application/json' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `test-cases-${new Date().toISOString().slice(0, 10)}.json`
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    URL.revokeObjectURL(url)
+    setSuccessMessage("Test cases exported to file successfully!")
+  }
+  
+  const importTestCases = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0]
+    if (!file) return
+    
+    const reader = new FileReader()
+    reader.onload = (e) => {
+      try {
+        const importedData = JSON.parse(e.target?.result as string)
+        
+        if (importedData.testCases) {
+          setUrl(importedData.url || "")
+          setTestCases(importedData.testCases)
+          setSuccessMessage(`Imported ${importedData.testCases.length} test cases successfully!`)
+        } else {
+          throw new Error('Invalid test cases file format')
+        }
+      } catch (error: any) {
+        setError(`Failed to import test cases: ${error.message}`)
+      }
+    }
+    reader.readAsText(file)
   }
 
   return (
-    <div className="w-full space-y-4">
-      <h3 className="text-lg font-medium">Generated Test Cases ({testCases.length})</h3>
+    <div className="container mx-auto py-10 px-4">
+      <div className="flex flex-col items-center mb-10 text-center">
+        <h1 className="text-4xl font-bold mb-4">Test Case Generator</h1>
+        <p className="text-muted-foreground max-w-2xl">
+          Generate test cases by analyzing website elements. Enter a URL to get started.
+        </p>
+      </div>
 
-      {testCases.map((testCase) => {
-        // Apply any corrections
-        const correctedTestCase = getCorrectedTestCase(testCase)
-        
-        return (
-          <Card key={correctedTestCase.id} className="w-full">
-            <CardHeader
-              className="p-4 cursor-pointer flex flex-row items-center justify-between"
-              onClick={() => toggleExpand(correctedTestCase.id)}
-            >
-              <div className="flex items-center">
-                {expandedCases[correctedTestCase.id] ? (
-                  <ChevronDown className="h-4 w-4 mr-2" />
-                ) : (
-                  <ChevronRight className="h-4 w-4 mr-2" />
-                )}
-                <h4 className="font-medium">{correctedTestCase.title}</h4>
-              </div>
-              <div className="flex items-center gap-2">
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  onClick={(e) => {
-                    e.stopPropagation()
-                    handleEdit(correctedTestCase)
-                  }}
-                >
-                  <Edit className="h-4 w-4" />
-                  <span className="sr-only">Edit</span>
-                </Button>
-                <Badge
-                  variant={
-                    correctedTestCase.priority === "High"
-                      ? "destructive"
-                      : correctedTestCase.priority === "Medium"
-                        ? "default"
-                        : "secondary"
-                  }
-                >
-                  {correctedTestCase.priority}
-                </Badge>
-              </div>
+      <Tabs defaultValue="generate" className="max-w-4xl mx-auto">
+        <TabsList className="grid w-full grid-cols-2">
+          <TabsTrigger value="generate">Generate Test Cases</TabsTrigger>
+          <TabsTrigger value="execute">Execute Tests</TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="generate">
+          <Card>
+            <CardHeader>
+              <CardTitle>Website Analysis</CardTitle>
+              <CardDescription>
+                Enter a URL to analyze and generate test cases based on the website's elements.
+              </CardDescription>
             </CardHeader>
-
-            {expandedCases[correctedTestCase.id] && (
-              <CardContent className="p-4 pt-0">
-                <p className="text-sm text-muted-foreground mb-4">{correctedTestCase.description}</p>
-
-                <div className="space-y-3">
-                  <h5 className="text-sm font-medium">Test Steps:</h5>
-                  <div className="space-y-3">
-                    {correctedTestCase.steps.map((step, index) => (
-                      <div key={index} className="p-3 bg-muted/50 rounded-md border-l-2 border-primary">
-                        <div className="grid grid-cols-[auto,1fr] gap-x-4 gap-y-1">
-                          <div className="font-medium text-sm">Step {step.step}:</div>
-                          <div className="text-sm">{step.action}</div>
-                          <div className="font-medium text-sm">Expected:</div>
-                          <div className="text-sm">{step.expected}</div>
-                        </div>
-                      </div>
-                    ))}
+            <CardContent>
+              <form onSubmit={handleSubmit} className="space-y-4">
+                <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
+                  <div className="md:col-span-3">
+                    <Label htmlFor="url">Website URL</Label>
+                    <Input
+                      id="url"
+                      placeholder="https://example.com"
+                      value={url}
+                      onChange={(e) => setUrl(e.target.value)}
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="format">Export Format</Label>
+                    <Select value={format} onValueChange={setFormat}>
+                      <SelectTrigger id="format">
+                        <SelectValue placeholder="Select format" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="json">JSON</SelectItem>
+                        <SelectItem value="txt">Plain Text</SelectItem>
+                        <SelectItem value="html">HTML</SelectItem>
+                        <SelectItem value="csv">CSV</SelectItem>
+                        <SelectItem value="maestro">Maestro</SelectItem>
+                        <SelectItem value="katalon">Katalon</SelectItem>
+                      </SelectContent>
+                    </Select>
                   </div>
                 </div>
-              </CardContent>
-            )}
-          </Card>
-        )
-      })}
 
-      <Dialog open={!!editingCase} onOpenChange={(open) => !open && setEditingCase(null)}>
-        <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle>Edit Test Case</DialogTitle>
-          </DialogHeader>
-
-          {editedCase && (
-            <div className="space-y-4 py-4">
-              <div className="grid grid-cols-1 gap-4">
-                <div>
-                  <Label htmlFor="title">Title</Label>
-                  <Input
-                    id="title"
-                    value={editedCase.title}
-                    onChange={(e) => setEditedCase({ ...editedCase, title: e.target.value })}
-                  />
+                <div className="flex flex-wrap gap-2 justify-end">
+                  <Button type="submit" disabled={isLoading}>
+                    {isLoading ? (
+                      <>
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        Analyzing...
+                      </>
+                    ) : (
+                      "Generate Test Cases"
+                    )}
+                  </Button>
+                  
+                  <Button 
+                    type="button" 
+                    variant="outline" 
+                    onClick={loadSavedTestCases}
+                  >
+                    Load Saved Tests
+                  </Button>
+                  
+                  <div className="relative">
+                    <input
+                      type="file"
+                      id="import-test-cases"
+                      className="absolute inset-0 opacity-0 w-full cursor-pointer"
+                      accept=".json"
+                      onChange={importTestCases}
+                    />
+                    <Button variant="outline" asChild>
+                      <label htmlFor="import-test-cases" className="cursor-pointer">
+                        <Upload className="mr-2 h-4 w-4" />
+                        Import Tests
+                      </label>
+                    </Button>
+                  </div>
                 </div>
+              </form>
 
-                <div>
-                  <Label htmlFor="description">Description</Label>
-                  <Textarea
-                    id="description"
-                    value={editedCase.description}
-                    onChange={(e) => setEditedCase({ ...editedCase, description: e.target.value })}
-                  />
-                </div>
-              </div>
+              {error && (
+                <Alert variant="destructive" className="mt-4">
+                  <AlertDescription>{error}</AlertDescription>
+                </Alert>
+              )}
+              
+              {successMessage && (
+                <Alert className="mt-4 bg-green-500/10 border-green-500/50">
+                  <AlertDescription>{successMessage}</AlertDescription>
+                </Alert>
+              )}
 
-              <div>
-                <h4 className="text-sm font-medium mb-2">Test Steps</h4>
-                <div className="space-y-4">
-                  {editedCase.steps.map((step, index) => (
-                    <div key={index} className="p-4 border rounded-md bg-muted/30">
-                      <div className="font-medium mb-2">Step {step.step}</div>
-                      <div className="space-y-3">
-                        <div>
-                          <Label htmlFor={`step-${index}-action`}>Action</Label>
-                          <Input
-                            id={`step-${index}-action`}
-                            value={step.action}
-                            onChange={(e) => handleStepChange(index, "action", e.target.value)}
-                          />
-                        </div>
-                        <div>
-                          <Label htmlFor={`step-${index}-expected`}>Expected Result</Label>
-                          <Input
-                            id={`step-${index}-expected`}
-                            value={step.expected}
-                            onChange={(e) => handleStepChange(index, "expected", e.target.value)}
-                          />
-                        </div>
+              {hasMoreElements && testCases.length > 0 && (
+                <div className="mt-6 p-4 border rounded-md bg-muted/50">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-sm text-muted-foreground">
+                        {nextElementType &&
+                          `Next: ${nextElementType.charAt(0).toUpperCase() + nextElementType.slice(1)} #${nextElementIndex + 1}`}
+                      </p>
+                      <div className="w-full h-2 bg-muted rounded-full mt-2">
+                        <div
+                          className="h-2 bg-primary rounded-full"
+                          style={{ width: `${(testCases.length / (testCases.length + 10)) * 100}%` }}
+                        ></div>
                       </div>
                     </div>
-                  ))}
+                    <Button onClick={handleGenerateMore} disabled={isLoading} variant="outline">
+                      {isLoading ? (
+                        <>
+                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                          Generating...
+                        </>
+                      ) : (
+                        "Generate 5 More"
+                      )}
+                    </Button>
+                  </div>
                 </div>
-              </div>
-            </div>
-          )}
+              )}
+            </CardContent>
 
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setEditingCase(null)}>
-              Cancel
-            </Button>
-            <Button onClick={handleSave}>Save Changes</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+            {testCases.length > 0 && (
+              <CardFooter className="flex flex-col">
+                <div className="w-full mb-4">
+                  <div className="flex justify-between items-center mb-2">
+                    <h3 className="text-lg font-medium">Export Options</h3>
+                    <div className="flex gap-2">
+                      <Button size="sm" variant="outline" onClick={saveTestCases}>
+                        <Save className="mr-2 h-4 w-4" />
+                        Save Tests
+                      </Button>
+                      <Button size="sm" variant="outline" onClick={exportTestCasesAsJson}>
+                        <Download className="mr-2 h-4 w-4" />
+                        Export Tests
+                      </Button>
+                    </div>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    <Button size="sm" variant="outline" onClick={() => handleExport("json")}>
+                      JSON
+                    </Button>
+                    <Button size="sm" variant="outline" onClick={() => handleExport("txt")}>
+                      Text
+                    </Button>
+                    <Button size="sm" variant="outline" onClick={() => handleExport("html")}>
+                      HTML
+                    </Button>
+                    <Button size="sm" variant="outline" onClick={() => handleExport("csv")}>
+                      CSV
+                    </Button>
+                    <Button size="sm" variant="outline" onClick={() => handleExport("maestro")}>
+                      Maestro
+                    </Button>
+                    <Button size="sm" variant="outline" onClick={() => handleExport("katalon")}>
+                      Katalon
+                    </Button>
+                  </div>
+                </div>
+
+                <TestCaseList testCases={testCases} />
+              </CardFooter>
+            )}
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="execute">
+          <TestExecutor testCases={testCases} url={url} />
+        </TabsContent>
+      </Tabs>
     </div>
   )
 }
