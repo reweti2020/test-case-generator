@@ -4,52 +4,76 @@
 
 @layer base {
   :root {
-    /* Dark theme background */
+    /* VelocityQA colors properly defined for shadcn/ui */
     --background: 222 47% 11%;
     --foreground: 210 40% 98%;
-
-    /* Card backgrounds */
+    
     --card: 217 33% 17%;
     --card-foreground: 210 40% 98%;
-
-    /* Popover / dropdown styling */
+    
     --popover: 222 47% 11%;
     --popover-foreground: 210 40% 98%;
-
+    
     /* VelocityQA teal as primary */
     --primary: 180 74% 45%;
     --primary-foreground: 0 0% 100%;
-
-    /* VelocityQA orange as secondary */
+    
+    /* VelocityQA orange accent */
     --secondary: 20 100% 50%;
     --secondary-foreground: 0 0% 100%;
-
-    /* Muted elements */
+    
     --muted: 217 33% 17%;
     --muted-foreground: 215 20% 65%;
-
-    /* Accent elements */
+    
     --accent: 217 33% 17%;
     --accent-foreground: 210 40% 98%;
-
-    /* Destructive elements */
+    
     --destructive: 0 63% 31%;
     --destructive-foreground: 210 40% 98%;
-
-    /* Other UI elements */
-    --border: 217 33% 17%;
+    
+    --border: 217 33% 25%;
     --input: 217 33% 17%;
-    --ring: 224 76% 48%;
-
-    /* Border radius */
+    --ring: 180 74% 45%;
+    
     --radius: 0.5rem;
-
-    /* Additional color variables */
+    
+    /* Additional status colors */
     --success: 142 70% 45%;
     --success-foreground: 0 0% 100%;
     
     --warning: 38 92% 50%;
     --warning-foreground: 0 0% 100%;
+  }
+
+  .dark {
+    /* We're enforcing dark mode, so the same variables apply */
+    --background: 222 47% 11%;
+    --foreground: 210 40% 98%;
+    
+    --card: 217 33% 17%;
+    --card-foreground: 210 40% 98%;
+    
+    --popover: 222 47% 11%;
+    --popover-foreground: 210 40% 98%;
+    
+    --primary: 180 74% 45%;
+    --primary-foreground: 0 0% 100%;
+    
+    --secondary: 20 100% 50%;
+    --secondary-foreground: 0 0% 100%;
+    
+    --muted: 217 33% 17%;
+    --muted-foreground: 215 20% 65%;
+    
+    --accent: 217 33% 17%;
+    --accent-foreground: 210 40% 98%;
+    
+    --destructive: 0 63% 31%;
+    --destructive-foreground: 210 40% 98%;
+    
+    --border: 217 33% 25%;
+    --input: 217 33% 17%;
+    --ring: 180 74% 45%;
   }
 }
 
@@ -59,10 +83,11 @@
   }
   body {
     @apply bg-background text-foreground;
+    font-feature-settings: "rlig" 1, "calt" 1;
   }
 }
 
-/* Add extra badge variants */
+/* Custom badge variants */
 .badge-success {
   background-color: hsl(var(--success));
   color: hsl(var(--success-foreground));
@@ -73,21 +98,7 @@
   color: hsl(var(--warning-foreground));
 }
 
-/* Add custom animations */
-@keyframes pulse {
-  0%, 100% {
-    opacity: 1;
-  }
-  50% {
-    opacity: 0.5;
-  }
-}
-
-.animate-pulse {
-  animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
-}
-
-/* Custom scrollbar styling */
+/* Custom scrollbar */
 ::-webkit-scrollbar {
   width: 8px;
   height: 8px;
@@ -107,27 +118,25 @@
   background: hsl(var(--muted-foreground));
 }
 
-/* Add VelocityQA specific styling */
-.upgrade-banner {
-  background-color: hsl(var(--background) / 0.6);
-  border: 1px solid hsl(var(--primary) / 0.5);
-  border-radius: var(--radius);
-  padding: 1.5rem;
-  margin-bottom: 2rem;
-  animation: fadeIn 0.5s ease-in-out;
+/* Animation */
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
 }
 
-.upgrade-content {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  text-align: center;
-  gap: 1rem;
+.animate-pulse {
+  animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
 }
 
 @keyframes fadeIn {
   from { opacity: 0; }
   to { opacity: 1; }
+}
+
+/* Premium tags and banners */
+.premium-tag {
+  position: relative;
+  display: inline-block;
 }
 
 .premium-tag::after {
@@ -151,4 +160,18 @@
 
 .premium-tag:hover::after {
   opacity: 1;
+}
+
+/* Promo banner */
+.promo-banner {
+  background-color: rgba(32, 197, 198, 0.15);
+  border-bottom: 1px solid hsl(var(--primary));
+  color: hsl(var(--foreground));
+  padding: 0.75rem 1rem;
+  text-align: center;
+  position: relative;
+  animation: fadeIn 0.5s ease-in-out;
+  display: flex;
+  justify-content: center;
+  align-items: center;
 }
