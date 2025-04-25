@@ -1,438 +1,321 @@
 import { NextResponse } from "next/server"
-import * as cheerio from "cheerio"
+
+// Reference to the in-memory page cache from generate-incremental.js
+// In production, use a database or cache service like Redis
+const sessionCache = {}
 
 export async function POST(request) {
   try {
     const body = await request.json()
-    const { testId, platform, url, testCase } = body || {}
+    const { sessionId, format } = body || {}
 
-    // Log the execution request
-    console.log(`Executing test ${testId} for ${platform} (${url})`)
+    // Log the request parameters
+    console.log(`Export request params: ${JSON.stringify({ sessionId, format })}`)
 
-    // For web tests, we'll use fetch and cheerio to actually test the website
-    if (platform === "web" && url) {
-      return await executeWebTest(testId, url, testCase)
+    if (!sessionId || !sessionCache[sessionId]) {
+      return NextResponse.json({
+        success: false,
+        error: "Invalid or expired session ID",
+      })
     }
 
-    // For other platforms or if no URL provided, return a simulated result
-    return simulateTestExecution(testId, platform, url)
+    const sessionData = sessionCache[sessionId]
+    let exportData = null
+    let filename = "test-cases"
+    let contentType = "application/json"
+
+    switch (format) {
+      case "maestro":
+        exportData = exportToMaestro(sessionData.pageData, sessionData.testCases)
+        filename = "maestro-flow.yaml"
+        contentType = "application/yaml"
+        break
+
+      case "katalon":
+        exportData = exportToKatalon(sessionData.pageData, sessionData.testCases)
+        filename = "katalon-tests.tc"
+        contentType = "application/octet-stream"
+        break
+
+      case "csv":
+        exportData = exportToCsv(sessionData.pageData, sessionData.testCases)
+        filename = "test-cases.csv"
+        contentType = "text/csv"
+        break
+
+      case "html":
+        exportData = exportToHtml(sessionData.pageData, sessionData.testCases)
+        filename = "test-cases.html"
+        contentType = "text/html"
+        break
+
+      case "txt":
+        exportData = exportToPlainText(sessionData.pageData, sessionData.testCases)
+        filename = "test-cases.txt"
+        contentType = "text/plain"
+        break
+
+      case "json":
+      default:
+        exportData = JSON.stringify(sessionData.testCases, null, 2)
+        filename = "test-cases.json"
+        contentType = "application/json"
+    }
+
+    return NextResponse.json({
+      success: true,
+      exportData,
+      filename,
+      contentType,
+    })
   } catch (error) {
-    console.error("Error in test-executor:", error)
+    console.error("Error in export-test:", error)
     return NextResponse.json({
       success: false,
-      error: `Error: ${error.message || "Unknown error"}`,
+      error: `Export error: ${error.message || "Unknown error"}`,
     })
   }
 }
 
 /**
- * Execute a web test using fetch and cheerio
+ * Convert test cases to Maestro Studio format
  */
-async function executeWebTest(testId, url, testCase) {
-  const startTime = Date.now()
-  const logs = [`[INFO] Starting test execution for ${testId}`, `[INFO] Target URL: ${url}`]
-  
-  try {
-    logs.push(`[INFO] Fetching URL: ${url}`)
+function exportToMaestro(pageData, testCases) {
+  const maestroAppId = pageData.url.replace(/https?:\/\//, "").replace(/\/$/, "")
 
-    // Fetch the website content
-    const response = await fetch(url, {
-      headers: {
-        "User-Agent":
-          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
-        Accept: "text/html,application/xhtml+xml,application/xml",
-        "Accept-Language": "en-US,en;q=0.9",
-      },
-      redirect: "follow",
-    })
+  let yamlContent = `appId: ${maestroAppId}\n---\n`
+  yamlContent += `- launchUrl: ${pageData.url}\n`
+  yamlContent += `- assertVisible: "${pageData.title}"\n\n`
 
-    if (!response.ok) {
-      throw new Error(`Failed to fetch URL (Status ${response.status})`)
-    }
+  testCases.forEach((testCase) => {
+    yamlContent += `# ${testCase.title}\n`
 
-    const html = await response.text()
-    logs.push(`[INFO] Page content fetched successfully (${html.length} bytes)`)
-
-    // Parse the HTML
-    const $ = cheerio.load(html)
-    logs.push(`[INFO] HTML parsed successfully`)
-
-    // Get page title
-    const title = $("title").text().trim()
-    logs.push(`[INFO] Page title: "${title}"`)
-
-    // Execute test steps if a full test case was provided
-    let stepResults = []
-    let allStepsPassed = true
-    
-    if (testCase && testCase.steps && testCase.steps.length > 0) {
-      logs.push(`[INFO] Executing ${testCase.steps.length} test steps`)
-      
-      for (const step of testCase.steps) {
-        const stepResult = await executeTestStep($, step, url, logs)
-        stepResults.push(stepResult)
-        
-        if (!stepResult.passed) {
-          allStepsPassed = false
-        }
+    testCase.steps.forEach((step) => {
+      if (step.step === 1 && step.action.includes("Navigate to") && testCases.indexOf(testCase) > 0) {
+        return
       }
-    } else {
-      // Perform basic checks based on test ID type if no specific steps provided
-      if (testId.includes("BTN")) {
-        // Check for buttons
-        const buttons = $('button, input[type="submit"], input[type="button"], .btn, [role="button"]')
-        if (buttons.length > 0) {
-          const buttonText = $(buttons[0]).text().trim() || $(buttons[0]).val() || "Unnamed Button"
-          logs.push(`[INFO] Found button: "${buttonText}"`)
-          stepResults.push({
-            step: 1,
-            description: "Check for buttons",
-            passed: true,
-            details: `Found ${buttons.length} buttons`
-          })
-        } else {
-          logs.push(`[WARNING] No buttons found on the page`)
-          stepResults.push({
-            step: 1,
-            description: "Check for buttons",
-            passed: false,
-            details: "No buttons found on the page"
-          })
-          allStepsPassed = false
-        }
-      } else if (testId.includes("LINK")) {
-        // Check for links
-        const links = $("a[href]")
-        if (links.length > 0) {
-          const linkText = $(links[0]).text().trim() || "Unnamed Link"
-          const linkHref = $(links[0]).attr("href") || "#"
-          logs.push(`[INFO] Found link: "${linkText}" (${linkHref})`)
-          stepResults.push({
-            step: 1,
-            description: "Check for links",
-            passed: true,
-            details: `Found ${links.length} links`
-          })
-        } else {
-          logs.push(`[WARNING] No links found on the page`)
-          stepResults.push({
-            step: 1,
-            description: "Check for links",
-            passed: false,
-            details: "No links found on the page"
-          })
-          allStepsPassed = false
-        }
-      } else if (testId.includes("FORM")) {
-        // Check for forms
-        const forms = $("form")
-        if (forms.length > 0) {
-          const formInputs = $(forms[0]).find("input, textarea, select").length
-          logs.push(`[INFO] Found form with ${formInputs} input fields`)
-          stepResults.push({
-            step: 1,
-            description: "Check for forms",
-            passed: true,
-            details: `Found ${forms.length} forms with ${formInputs} input fields`
-          })
-        } else {
-          logs.push(`[WARNING] No forms found on the page`)
-          stepResults.push({
-            step: 1,
-            description: "Check for forms",
-            passed: false,
-            details: "No forms found on the page"
-          })
-          allStepsPassed = false
-        }
-      } else if (testId.includes("PAGE")) {
-        // Check page title
-        if (title) {
-          logs.push(`[INFO] Page title verification passed`)
-          stepResults.push({
-            step: 1,
-            description: "Verify page title",
-            passed: true,
-            details: `Page title: "${title}"`
-          })
-        } else {
-          logs.push(`[WARNING] Page has no title`)
-          stepResults.push({
-            step: 1,
-            description: "Verify page title",
-            passed: false,
-            details: "Page has no title"
-          })
-          allStepsPassed = false
-        }
-      }
-    }
 
-    const executionTime = Date.now() - startTime
-    
-    if (allStepsPassed) {
-      logs.push(`[SUCCESS] Test completed successfully in ${executionTime}ms`)
-    } else {
-      logs.push(`[FAILURE] Test failed in ${executionTime}ms`)
-    }
-
-    return NextResponse.json({
-      success: true,
-      testId,
-      status: allStepsPassed ? "passed" : "failed",
-      executionTime,
-      stepResults,
-      timestamp: new Date().toISOString(),
-      logs,
-    })
-  } catch (error) {
-    const executionTime = Date.now() - startTime
-    logs.push(`[ERROR] Test failed: ${error.message}`)
-
-    return NextResponse.json({
-      success: true,
-      testId,
-      status: "failed",
-      executionTime,
-      failureReason: error.message,
-      timestamp: new Date().toISOString(),
-      logs,
-    })
-  }
-}
-
-/**
- * Execute a single test step
- */
-async function executeTestStep($, step, url, logs) {
-  const stepResult = {
-    step: step.step,
-    description: step.action,
-    expected: step.expected,
-    passed: false,
-    details: ""
-  }
-
-  try {
-    // Handle different types of steps
-    if (step.action.includes("Navigate to")) {
-      // Navigation step - we've already navigated to the URL
-      stepResult.passed = true
-      stepResult.details = "Navigation successful"
-      logs.push(`[INFO] Step ${step.step}: Navigation verified`)
-    } 
-    else if (step.action.includes("Verify page title")) {
-      // Title verification
-      const pageTitle = $("title").text().trim()
-      const expectedTitle = step.expected.replace(/^Title is "/, "").replace(/"$/, "")
-      
-      if (pageTitle.includes(expectedTitle) || expectedTitle.includes(pageTitle)) {
-        stepResult.passed = true
-        stepResult.details = `Title verified: "${pageTitle}"`
-        logs.push(`[INFO] Step ${step.step}: Title verification passed`)
-      } else {
-        stepResult.passed = false
-        stepResult.details = `Expected title "${expectedTitle}" but found "${pageTitle}"`
-        logs.push(`[WARNING] Step ${step.step}: Title verification failed`)
-      }
-    }
-    else if (step.action.includes("Locate")) {
-      // Element location
-      let elementFound = false
-      let elementType = ""
-      
-      if (step.action.includes("button")) {
-        elementType = "button"
-        const buttons = $('button, input[type="submit"], input[type="button"], .btn, [role="button"]')
-        elementFound = buttons.length > 0
-        
-        // Try to find a specific button if mentioned
-        if (step.action.includes('with text "')) {
-          const buttonText = step.action.match(/with text "([^"]+)"/)[1]
-          const specificButton = buttons.filter((i, el) => $(el).text().trim().includes(buttonText))
-          elementFound = specificButton.length > 0
-        } else if (step.action.includes('with ID "')) {
-          const buttonId = step.action.match(/with ID "([^"]+)"/)[1]
-          const specificButton = buttons.filter((i, el) => $(el).attr('id') === buttonId)
-          elementFound = specificButton.length > 0
-        }
-      } 
-      else if (step.action.includes("link")) {
-        elementType = "link"
-        const links = $("a[href]")
-        elementFound = links.length > 0
-        
-        // Try to find a specific link if mentioned
-        if (step.action.includes('with text "')) {
-          const linkText = step.action.match(/with text "([^"]+)"/)[1]
-          const specificLink = links.filter((i, el) => $(el).text().trim().includes(linkText))
-          elementFound = specificLink.length > 0
-        } else if (step.action.includes('with ID "')) {
-          const linkId = step.action.match(/with ID "([^"]+)"/)[1]
-          const specificLink = links.filter((i, el) => $(el).attr('id') === linkId)
-          elementFound = specificLink.length > 0
-        }
-      }
-      else if (step.action.includes("form")) {
-        elementType = "form"
-        const forms = $("form")
-        elementFound = forms.length > 0
-        
-        // Try to find a specific form if mentioned
-        if (step.action.includes('with ID "')) {
-          const formId = step.action.match(/with ID "([^"]+)"/)[1]
-          const specificForm = forms.filter((i, el) => $(el).attr('id') === formId)
-          elementFound = specificForm.length > 0
-        }
-      }
-      else if (step.action.includes("field")) {
-        elementType = "input field"
-        const inputs = $('input, textarea, select')
-        elementFound = inputs.length > 0
-        
-        // Try to find a specific input if mentioned
-        if (step.action.includes('with ID "')) {
-          const inputId = step.action.match(/with ID "([^"]+)"/)[1]
-          const specificInput = inputs.filter((i, el) => $(el).attr('id') === inputId)
-          elementFound = specificInput.length > 0
-        } else if (step.action.includes('with name "')) {
-          const inputName = step.action.match(/with name "([^"]+)"/)[1]
-          const specificInput = inputs.filter((i, el) => $(el).attr('name') === inputName)
-          elementFound = specificInput.length > 0
-        }
-      }
-      
-      if (elementFound) {
-        stepResult.passed = true
-        stepResult.details = `${elementType} found on page`
-        logs.push(`[INFO] Step ${step.step}: ${elementType} found`)
-      } else {
-        stepResult.passed = false
-        stepResult.details = `${elementType} not found on page`
-        logs.push(`[WARNING] Step ${step.step}: ${elementType} not found`)
-      }
-    }
-    else {
-      // For other steps that we can't actually execute (click, enter text, etc.)
-      // we'll just check if the relevant elements exist
       if (step.action.includes("Click")) {
-        const elementText = step.action.replace(/Click the /, "").replace(/ button$/, "").replace(/ link$/, "").trim()
-        const buttons = $('button, input[type="submit"], input[type="button"], .btn, [role="button"]')
-        const links = $("a[href]")
-        
-        let elementFound = false
-        
-        // Check buttons
-        buttons.each((i, el) => {
-          const text = $(el).text().trim() || $(el).val() || ""
-          if (text.includes(elementText) || elementText.includes(text)) {
-            elementFound = true
-          }
-        })
-        
-        // Check links
-        if (!elementFound) {
-          links.each((i, el) => {
-            const text = $(el).text().trim() || ""
-            if (text.includes(elementText) || elementText.includes(text)) {
-              elementFound = true
-            }
-          })
-        }
-        
-        if (elementFound) {
-          stepResult.passed = true
-          stepResult.details = `Element "${elementText}" found on page`
-          logs.push(`[INFO] Step ${step.step}: Element for click action found`)
-        } else {
-          stepResult.passed = false
-          stepResult.details = `Element "${elementText}" not found on page`
-          logs.push(`[WARNING] Step ${step.step}: Element for click action not found`)
-        }
+        yamlContent += `- tapOn: "${extractElementName(step.action)}"\n`
+      } else if (step.action.includes("Enter")) {
+        const inputField = extractInputField(step.action)
+        const inputValue = extractInputValue(step.action)
+        yamlContent += `- inputText: "${inputValue}"\n`
+        yamlContent += `  into: "${inputField}"\n`
+      } else if (step.action.includes("Verify")) {
+        yamlContent += `- assertVisible: "${extractExpectedText(step.expected)}"\n`
       }
-      else if (step.action.includes("Enter")) {
-        // Check if the input field exists
-        const inputMatch = step.action.match(/Enter "[^"]+" (?:in|into) the ([^"]+) field/)
-        const fieldName = inputMatch ? inputMatch[1] : ""
-        
-        const inputs = $('input, textarea, select')
-        let inputFound = false
-        
-        inputs.each((i, el) => {
-          const id = $(el).attr('id') || ""
-          const name = $(el).attr('name') || ""
-          const placeholder = $(el).attr('placeholder') || ""
-          const label = $(`label[for="${id}"]`).text().trim() || ""
-          
-          if (id.includes(fieldName) || name.includes(fieldName) || 
-              placeholder.includes(fieldName) || label.includes(fieldName) ||
-              fieldName.includes(id) || fieldName.includes(name)) {
-            inputFound = true
-          }
-        })
-        
-        if (inputFound) {
-          stepResult.passed = true
-          stepResult.details = `Input field "${fieldName}" found on page`
-          logs.push(`[INFO] Step ${step.step}: Input field found`)
-        } else {
-          stepResult.passed = false
-          stepResult.details = `Input field "${fieldName}" not found on page`
-          logs.push(`[WARNING] Step ${step.step}: Input field not found`)
-        }
-      }
-      else {
-        // For other steps we can't verify, mark as skipped
-        stepResult.passed = true
-        stepResult.details = "Step verification skipped (simulation only)"
-        logs.push(`[INFO] Step ${step.step}: Verification skipped (simulation only)`)
-      }
-    }
-  } catch (error) {
-    stepResult.passed = false
-    stepResult.details = `Error: ${error.message}`
-    logs.push(`[ERROR] Step ${step.step}: ${error.message}`)
-  }
-  
-  return stepResult
+    })
+
+    yamlContent += "\n"
+  })
+
+  return yamlContent
 }
 
 /**
- * Simulate test execution for when real execution is not possible
+ * Convert test cases to Katalon Studio format
  */
-function simulateTestExecution(testId, platform, url) {
-  // Simulate test execution delay
-  const passed = Math.random() > 0.3
+function exportToKatalon(pageData, testCases) {
+  let katalon = ""
 
-  // If test failed, generate a random failure reason
-  let failureReason = null
-  if (!passed) {
-    const failureReasons = [
-      "Element not found on page",
-      "Timeout waiting for page to load",
-      "Expected text not present on page",
-      "Button not clickable",
-      "Form submission failed",
-      "Navigation did not complete",
-      "Unexpected alert dialog appeared",
-      "Page layout changed from expected",
-    ]
-    failureReason = failureReasons[Math.floor(Math.random() * failureReasons.length)]
-  }
+  testCases.forEach((testCase, index) => {
+    const testCaseId = testCase.id.replace("TC_", "")
+    const guid = generateGuid()
 
-  // Return execution result
-  return NextResponse.json({
-    success: true,
-    testId,
-    status: passed ? "passed" : "failed",
-    executionTime: Math.floor(Math.random() * 1000) + 500, // Random time between 500-1500ms
-    failureReason,
-    timestamp: new Date().toISOString(),
-    logs: [
-      `[INFO] Starting test execution for ${testId}`,
-      `[INFO] Platform: ${platform}`,
-      `[INFO] Target: ${url}`,
-      passed ? `[SUCCESS] Test completed successfully` : `[ERROR] Test failed: ${failureReason}`,
-    ],
+    katalon += `<?xml version="1.0" encoding="UTF-8"?>\n`
+    katalon += `<TestCaseEntity>\n`
+    katalon += `   <name>${testCase.id}</name>\n`
+    katalon += `   <tag></tag>\n`
+    katalon += `   <comment>${testCase.description}</comment>\n`
+    katalon += `   <testCaseGuid>${guid}</testCaseGuid>\n`
+
+    if (testCase.title.includes("Form") || testCase.title.includes("Input")) {
+      katalon += `   <variable>\n`
+      katalon += `      <name>testValue</name>\n`
+      katalon += `      <value>sample_value</value>\n`
+      katalon += `   </variable>\n`
+    }
+
+    katalon += `</TestCaseEntity>\n\n`
   })
+
+  return katalon
+}
+
+/**
+ * Convert test cases to CSV format
+ */
+function exportToCsv(pageData, testCases) {
+  let csv = "Title,Type,Priority,Preconditions,Steps,Expected Result,References\n"
+
+  testCases.forEach((testCase) => {
+    const title = escapeCsvField(testCase.title)
+    const type = "Functional"
+    const priority = escapeCsvField(testCase.priority)
+    const preconditions = "None"
+
+    let steps = ""
+    let expectedResults = ""
+
+    testCase.steps.forEach((step) => {
+      steps += `${step.step}. ${step.action}\n`
+      expectedResults += `${step.step}. ${step.expected}\n`
+    })
+
+    const stepsFormatted = escapeCsvField(steps.trim())
+    const expectedFormatted = escapeCsvField(expectedResults.trim())
+    const references = testCase.id
+
+    csv += `${title},${type},${priority},${preconditions},${stepsFormatted},${expectedFormatted},${references}\n`
+  })
+
+  return csv
+}
+
+/**
+ * Export to HTML format with styling
+ */
+function exportToHtml(pageData, testCases) {
+  let html = `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Test Cases for ${pageData.title}</title>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 0; padding: 20px; }
+    h1 { color: #333; }
+    .test-case { border: 1px solid #ddd; margin-bottom: 20px; padding: 15px; border-radius: 5px; }
+    .test-case h2 { margin-top: 0; color: #0066cc; }
+    .test-case p { margin: 5px 0; }
+    .priority-High { background-color: #ffe6e6; }
+    .priority-Medium { background-color: #e6f2ff; }
+    .priority-Low { background-color: #e6ffe6; }
+    table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+    th, td { padding: 8px; text-align: left; border: 1px solid #ddd; }
+    th { background-color: #f2f2f2; }
+  </style>
+</head>
+<body>
+  <h1>Test Cases for ${pageData.title}</h1>
+  <p>URL: ${pageData.url}</p>
+  <p>Generated: ${new Date().toLocaleString()}</p>
+  
+  <div class="test-cases">`
+
+  testCases.forEach((testCase) => {
+    html += `
+    <div class="test-case priority-${testCase.priority}">
+      <h2>${testCase.title}</h2>
+      <p><strong>ID:</strong> ${testCase.id}</p>
+      <p><strong>Description:</strong> ${testCase.description}</p>
+      <p><strong>Priority:</strong> ${testCase.priority}</p>
+      
+      <h3>Test Steps:</h3>
+      <table>
+        <thead>
+          <tr>
+            <th>Step</th>
+            <th>Action</th>
+            <th>Expected Result</th>
+          </tr>
+        </thead>
+        <tbody>`
+
+    testCase.steps.forEach((step) => {
+      html += `
+          <tr>
+            <td>${step.step}</td>
+            <td>${step.action}</td>
+            <td>${step.expected}</td>
+          </tr>`
+    })
+
+    html += `
+        </tbody>
+      </table>
+    </div>`
+  })
+
+  html += `
+  </div>
+</body>
+</html>`
+
+  return html
+}
+
+/**
+ * Generate plain text export format
+ */
+function exportToPlainText(pageData, testCases) {
+  let text = `TEST CASES FOR ${pageData.title.toUpperCase()}\n`
+  text += `URL: ${pageData.url}\n`
+  text += `Generated: ${new Date().toLocaleString()}\n\n`
+
+  testCases.forEach((testCase) => {
+    text += `ID: ${testCase.id}\n`
+    text += `TITLE: ${testCase.title}\n`
+    text += `DESCRIPTION: ${testCase.description}\n`
+    text += `PRIORITY: ${testCase.priority}\n\n`
+
+    text += `TEST STEPS:\n`
+    testCase.steps.forEach((step) => {
+      text += `${step.step}. ${step.action}\n`
+      text += `   Expected: ${step.expected}\n\n`
+    })
+
+    text += `----------------------------\n\n`
+  })
+
+  return text
+}
+
+// Helper functions
+function escapeCsvField(field) {
+  const escaped = field.replace(/"/g, '""')
+  return `"${escaped}"`
+}
+
+function generateGuid() {
+  return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (c) => {
+    const r = (Math.random() * 16) | 0
+    const v = c === "x" ? r : (r & 0x3) | 0x8
+    return v.toString(16)
+  })
+}
+
+function extractElementName(action) {
+  const buttonMatch = action.match(
+    /(Click|Find|Submit) (?:button|link) (?:with text "([^"]+)"|with ID "([^"]+)"|(\d+))/i,
+  )
+  if (buttonMatch) {
+    return buttonMatch[2] || buttonMatch[3] || buttonMatch[4] || "element"
+  }
+  return "element"
+}
+
+function extractInputField(action) {
+  const inputMatch = action.match(/(?:the|into) ([^"]+) field|field ([^"]+)/i)
+  if (inputMatch) {
+    return inputMatch[1] || inputMatch[2] || "input_field"
+  }
+  return "input_field"
+}
+
+function extractInputValue(action) {
+  const valueMatch = action.match(/Enter "([^"]+)"/i)
+  if (valueMatch) {
+    return valueMatch[1] || "test_value"
+  }
+  return "test_value"
+}
+
+function extractExpectedText(expected) {
+  const titleMatch = expected.match(/Title is "([^"]+)"/i)
+  if (titleMatch) {
+    return titleMatch[1]
+  }
+  return expected.replace(/"/g, "")
 }
