@@ -487,4 +487,3 @@ export default function TestExecutor({ testCases, url }: TestExecutorProps) {
     </Card>
   )
 }
-
