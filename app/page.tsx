@@ -1,457 +1,151 @@
-"use client"
-
-import React, { useState, useEffect } from "react"
+import Link from "next/link"
 import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
-import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import TestCaseList from "@/components/test-case-list"
-import TestExecutor from "@/components/test-executor"
-import { Loader2, Download, Upload, Save } from 'lucide-react'
-import { Alert, AlertDescription } from "@/components/ui/alert"
+import { ArrowRight, Code, LineChart, TestTube2 } from "lucide-react"
 
-export default function TestCaseGenerator() {
-  const [url, setUrl] = useState("")
-  const [format, setFormat] = useState("json")
-  const [isLoading, setIsLoading] = useState(false)
-  const [sessionId, setSessionId] = useState<string | null>(null)
-  const [testCases, setTestCases] = useState<any[]>([])
-  const [hasMoreElements, setHasMoreElements] = useState(false)
-  const [nextElementType, setNextElementType] = useState<string | null>(null)
-  const [nextElementIndex, setNextElementIndex] = useState(0)
-  const [totalTestCases, setTotalTestCases] = useState(0)
-  const [error, setError] = useState<string | null>(null)
-  const [successMessage, setSuccessMessage] = useState<string | null>(null)
-
-  // Load saved test cases on component mount
-  useEffect(() => {
-    const savedTestCases = localStorage.getItem('savedTestCases')
-    if (savedTestCases) {
-      try {
-        const parsed = JSON.parse(savedTestCases)
-        if (parsed.length > 0) {
-          setSuccessMessage("Previously saved test cases are available. Click 'Load Saved Tests' to view them.")
-        }
-      } catch (e) {
-        console.error('Failed to parse saved test cases', e)
-      }
-    }
-  }, [])
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
-    if (!url) {
-      setError("Please enter a valid URL")
-      return
-    }
-
-    setIsLoading(true)
-    setError(null)
-    setTestCases([])
-    setSessionId(null)
-    setSuccessMessage(null)
-
-    try {
-      const response = await fetch("/api/generate-incremental", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          url,
-          mode: "first",
-          format,
-        }),
-      })
-
-      if (!response.ok) {
-        throw new Error(`Server responded with status: ${response.status}`)
-      }
-
-      const data = await response.json()
-
-      if (data.success) {
-        setSessionId(data.sessionId)
-        setTestCases(data.testCases || [])
-        setHasMoreElements(data.hasMoreElements)
-        setNextElementType(data.nextElementType)
-        setNextElementIndex(data.nextElementIndex)
-        setTotalTestCases(data.totalTestCases || (data.testCases ? data.testCases.length : 0))
-        setSuccessMessage("Test cases generated successfully!")
-      } else {
-        setError(`Error: ${data.error || "Unknown error occurred"}`)
-      }
-    } catch (error: any) {
-      setError(`Error: ${error.message || "Unknown error occurred"}`)
-    } finally {
-      setIsLoading(false)
-    }
-  }
-
-  const handleGenerateMore = async () => {
-    if (!sessionId || !hasMoreElements) return
-
-    setIsLoading(true)
-    setError(null)
-    setSuccessMessage(null)
-
-    try {
-      const response = await fetch("/api/generate-incremental", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          mode: "next",
-          sessionId,
-          elementType: nextElementType,
-          elementIndex: nextElementIndex,
-          format,
-          batchSize: 5,
-        }),
-      })
-
-      if (!response.ok) {
-        throw new Error(`Server responded with status: ${response.status}`)
-      }
-
-      const data = await response.json()
-
-      if (data.success) {
-        setTestCases((prev) => [...prev, ...(data.testCases || [])])
-        setHasMoreElements(data.hasMoreElements)
-        setNextElementType(data.nextElementType)
-        setNextElementIndex(data.nextElementIndex)
-        setTotalTestCases(data.totalTestCases || testCases.length + (data.testCases?.length || 0))
-        setSuccessMessage("Additional test cases generated successfully!")
-      } else {
-        setError(`Error: ${data.error || "Unknown error occurred"}`)
-      }
-    } catch (error: any) {
-      setError(`Error: ${error.message || "Unknown error occurred"}`)
-    } finally {
-      setIsLoading(false)
-    }
-  }
-
-  const handleExport = async (format: string) => {
-    if (!sessionId) return
-
-    try {
-      const response = await fetch("/api/export-test", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          sessionId,
-          format,
-        }),
-      })
-
-      if (!response.ok) {
-        throw new Error(`Server responded with status: ${response.status}`)
-      }
-
-      const data = await response.json()
-
-      if (data.success) {
-        // Create a blob and download the file
-        const blob = new Blob([data.exportData], { type: data.contentType })
-        const url = URL.createObjectURL(blob)
-        const a = document.createElement("a")
-        a.href = url
-        a.download = data.filename
-        document.body.appendChild(a)
-        a.click()
-        document.body.removeChild(a)
-        URL.revokeObjectURL(url)
-        setSuccessMessage(`Test cases exported as ${format.toUpperCase()} successfully!`)
-      } else {
-        setError(`Export error: ${data.error || "Unknown error"}`)
-      }
-    } catch (error: any) {
-      setError(`Export error: ${error.message || "Unknown error"}`)
-    }
-  }
-
-  const saveTestCases = () => {
-    if (testCases.length === 0) return
-    
-    const testSuite = {
-      url,
-      sessionId,
-      testCases,
-      date: new Date().toISOString()
-    }
-    
-    // Get existing saved test suites
-    const savedTestCases = localStorage.getItem('savedTestCases')
-    let testSuites = []
-    
-    if (savedTestCases) {
-      try {
-        testSuites = JSON.parse(savedTestCases)
-      } catch (e) {
-        console.error('Failed to parse saved test cases', e)
-      }
-    }
-    
-    // Add new test suite
-    testSuites.push(testSuite)
-    
-    // Save back to localStorage
-    localStorage.setItem('savedTestCases', JSON.stringify(testSuites))
-    setSuccessMessage("Test cases saved successfully!")
-  }
-  
-  const loadSavedTestCases = () => {
-    const savedTestCases = localStorage.getItem('savedTestCases')
-    if (!savedTestCases) {
-      setError("No saved test cases found")
-      return
-    }
-    
-    try {
-      const testSuites = JSON.parse(savedTestCases)
-      if (testSuites.length === 0) {
-        setError("No saved test cases found")
-        return
-      }
-      
-      // Load the most recent test suite
-      const latestTestSuite = testSuites[testSuites.length - 1]
-      setUrl(latestTestSuite.url)
-      setSessionId(latestTestSuite.sessionId)
-      setTestCases(latestTestSuite.testCases)
-      setSuccessMessage(`Loaded test cases for ${latestTestSuite.url} from ${new Date(latestTestSuite.date).toLocaleString()}`)
-    } catch (e) {
-      setError("Failed to load saved test cases")
-      console.error('Failed to parse saved test cases', e)
-    }
-  }
-  
-  const exportTestCasesAsJson = () => {
-    if (testCases.length === 0) return
-    
-    const testSuite = {
-      url,
-      testCases,
-      date: new Date().toISOString()
-    }
-    
-    const blob = new Blob([JSON.stringify(testSuite, null, 2)], { type: 'application/json' })
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = `test-cases-${new Date().toISOString().slice(0, 10)}.json`
-    document.body.appendChild(a)
-    a.click()
-    document.body.removeChild(a)
-    URL.revokeObjectURL(url)
-    setSuccessMessage("Test cases exported to file successfully!")
-  }
-  
-  const importTestCases = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0]
-    if (!file) return
-    
-    const reader = new FileReader()
-    reader.onload = (e) => {
-      try {
-        const importedData = JSON.parse(e.target?.result as string)
-        
-        if (importedData.testCases) {
-          setUrl(importedData.url || "")
-          setTestCases(importedData.testCases)
-          setSuccessMessage(`Imported ${importedData.testCases.length} test cases successfully!`)
-        } else {
-          throw new Error('Invalid test cases file format')
-        }
-      } catch (error: any) {
-        setError(`Failed to import test cases: ${error.message}`)
-      }
-    }
-    reader.readAsText(file)
-  }
-
+export default function Home() {
   return (
-    <div className="container mx-auto py-10 px-4">
-      <div className="flex flex-col items-center mb-10 text-center">
-        <h1 className="text-4xl font-bold mb-4">Test Case Generator</h1>
-        <p className="text-muted-foreground max-w-2xl">
-          Generate test cases by analyzing website elements. Enter a URL to get started.
-        </p>
-      </div>
-
-      <Tabs defaultValue="generate" className="max-w-4xl mx-auto">
-        <TabsList className="grid w-full grid-cols-2">
-          <TabsTrigger value="generate">Generate Test Cases</TabsTrigger>
-          <TabsTrigger value="execute">Execute Tests</TabsTrigger>
-        </TabsList>
-
-        <TabsContent value="generate">
-          <Card>
-            <CardHeader>
-              <CardTitle>Website Analysis</CardTitle>
-              <CardDescription>
-                Enter a URL to analyze and generate test cases based on the website's elements.
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <form onSubmit={handleSubmit} className="space-y-4">
-                <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
-                  <div className="md:col-span-3">
-                    <Label htmlFor="url">Website URL</Label>
-                    <Input
-                      id="url"
-                      placeholder="https://example.com"
-                      value={url}
-                      onChange={(e) => setUrl(e.target.value)}
-                    />
-                  </div>
-                  <div>
-                    <Label htmlFor="format">Export Format</Label>
-                    <Select value={format} onValueChange={setFormat}>
-                      <SelectTrigger id="format">
-                        <SelectValue placeholder="Select format" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="json">JSON</SelectItem>
-                        <SelectItem value="txt">Plain Text</SelectItem>
-                        <SelectItem value="html">HTML</SelectItem>
-                        <SelectItem value="csv">CSV</SelectItem>
-                        <SelectItem value="maestro">Maestro</SelectItem>
-                        <SelectItem value="katalon">Katalon</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
+    <div className="flex min-h-screen flex-col">
+      <header className="sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
+        <div className="container flex h-14 items-center">
+          <div className="mr-4 flex">
+            <Link href="/" className="mr-6 flex items-center space-x-2">
+              <TestTube2 className="h-6 w-6" />
+              <span className="font-bold">TestAI</span>
+            </Link>
+          </div>
+          <div className="flex flex-1 items-center justify-end space-x-2">
+            <nav className="flex items-center space-x-4">
+              <Link
+                href="/dashboard"
+                className="text-sm font-medium text-muted-foreground transition-colors hover:text-primary"
+              >
+                Dashboard
+              </Link>
+              <Link
+                href="/create"
+                className="text-sm font-medium text-muted-foreground transition-colors hover:text-primary"
+              >
+                Create Test
+              </Link>
+            </nav>
+          </div>
+        </div>
+      </header>
+      <main className="flex-1">
+        <section className="w-full py-12 md:py-24 lg:py-32 xl:py-48">
+          <div className="container px-4 md:px-6">
+            <div className="grid gap-6 lg:grid-cols-[1fr_400px] lg:gap-12 xl:grid-cols-[1fr_600px]">
+              <div className="flex flex-col justify-center space-y-4">
+                <div className="space-y-2">
+                  <h1 className="text-3xl font-bold tracking-tighter sm:text-5xl xl:text-6xl/none">
+                    AI-Powered Testing for Your Web Applications
+                  </h1>
+                  <p className="max-w-[600px] text-muted-foreground md:text-xl">
+                    Automatically scrape websites, generate test cases using AI, execute tests, and get detailed
+                    reports.
+                  </p>
                 </div>
-
-                <div className="flex flex-wrap gap-2 justify-end">
-                  <Button type="submit" disabled={isLoading}>
-                    {isLoading ? (
-                      <>
-                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                        Analyzing...
-                      </>
-                    ) : (
-                      "Generate Test Cases"
-                    )}
-                  </Button>
-                  
-                  <Button 
-                    type="button" 
-                    variant="outline" 
-                    onClick={loadSavedTestCases}
-                  >
-                    Load Saved Tests
-                  </Button>
-                  
-                  <div className="relative">
-                    <input
-                      type="file"
-                      id="import-test-cases"
-                      className="absolute inset-0 opacity-0 w-full cursor-pointer"
-                      accept=".json"
-                      onChange={importTestCases}
-                    />
-                    <Button variant="outline" asChild>
-                      <label htmlFor="import-test-cases" className="cursor-pointer">
-                        <Upload className="mr-2 h-4 w-4" />
-                        Import Tests
-                      </label>
+                <div className="flex flex-col gap-2 min-[400px]:flex-row">
+                  <Link href="/create">
+                    <Button size="lg">
+                      Get Started
+                      <ArrowRight className="ml-2 h-4 w-4" />
                     </Button>
-                  </div>
+                  </Link>
                 </div>
-              </form>
-
-              {error && (
-                <Alert variant="destructive" className="mt-4">
-                  <AlertDescription>{error}</AlertDescription>
-                </Alert>
-              )}
-              
-              {successMessage && (
-                <Alert className="mt-4 bg-green-500/10 border-green-500/50">
-                  <AlertDescription>{successMessage}</AlertDescription>
-                </Alert>
-              )}
-
-              {hasMoreElements && testCases.length > 0 && (
-                <div className="mt-6 p-4 border rounded-md bg-muted/50">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="text-sm text-muted-foreground">
-                        {nextElementType &&
-                          `Next: ${nextElementType.charAt(0).toUpperCase() + nextElementType.slice(1)} #${nextElementIndex + 1}`}
-                      </p>
-                      <div className="w-full h-2 bg-muted rounded-full mt-2">
-                        <div
-                          className="h-2 bg-primary rounded-full"
-                          style={{ width: `${(testCases.length / (testCases.length + 10)) * 100}%` }}
-                        ></div>
+              </div>
+              <div className="flex items-center justify-center">
+                <div className="relative h-[350px] w-full overflow-hidden rounded-xl border bg-background p-4 shadow-xl">
+                  <div className="flex h-full flex-col gap-4">
+                    <div className="flex items-center gap-2">
+                      <div className="h-3 w-3 rounded-full bg-red-500" />
+                      <div className="h-3 w-3 rounded-full bg-yellow-500" />
+                      <div className="h-3 w-3 rounded-full bg-green-500" />
+                      <div className="ml-2 text-sm font-medium">Test Results</div>
+                    </div>
+                    <div className="grid flex-1 grid-cols-2 gap-4">
+                      <div className="flex flex-col gap-2 rounded-lg border p-4">
+                        <div className="text-sm font-medium">Tests Passed</div>
+                        <div className="text-2xl font-bold text-green-500">12</div>
+                      </div>
+                      <div className="flex flex-col gap-2 rounded-lg border p-4">
+                        <div className="text-sm font-medium">Tests Failed</div>
+                        <div className="text-2xl font-bold text-red-500">2</div>
+                      </div>
+                      <div className="col-span-2 flex flex-col gap-2 rounded-lg border p-4">
+                        <div className="text-sm font-medium">Test Coverage</div>
+                        <div className="h-2 rounded-full bg-muted">
+                          <div className="h-full w-[85%] rounded-full bg-primary" />
+                        </div>
+                        <div className="text-xs text-muted-foreground">85% of critical paths tested</div>
                       </div>
                     </div>
-                    <Button onClick={handleGenerateMore} disabled={isLoading} variant="outline">
-                      {isLoading ? (
-                        <>
-                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                          Generating...
-                        </>
-                      ) : (
-                        "Generate 5 More"
-                      )}
-                    </Button>
-                  </div>
-                </div>
-              )}
-            </CardContent>
-
-            {testCases.length > 0 && (
-              <CardFooter className="flex flex-col">
-                <div className="w-full mb-4">
-                  <div className="flex justify-between items-center mb-2">
-                    <h3 className="text-lg font-medium">Export Options</h3>
-                    <div className="flex gap-2">
-                      <Button size="sm" variant="outline" onClick={saveTestCases}>
-                        <Save className="mr-2 h-4 w-4" />
-                        Save Tests
-                      </Button>
-                      <Button size="sm" variant="outline" onClick={exportTestCasesAsJson}>
-                        <Download className="mr-2 h-4 w-4" />
-                        Export Tests
-                      </Button>
+                    <div className="flex flex-col gap-2 rounded-lg border p-4">
+                      <div className="text-sm font-medium">Recent Tests</div>
+                      <div className="flex items-center justify-between text-xs">
+                        <span>Login Flow</span>
+                        <span className="text-green-500">Passed</span>
+                      </div>
+                      <div className="flex items-center justify-between text-xs">
+                        <span>Checkout Process</span>
+                        <span className="text-red-500">Failed</span>
+                      </div>
                     </div>
                   </div>
-                  <div className="flex flex-wrap gap-2">
-                    <Button size="sm" variant="outline" onClick={() => handleExport("json")}>
-                      JSON
-                    </Button>
-                    <Button size="sm" variant="outline" onClick={() => handleExport("txt")}>
-                      Text
-                    </Button>
-                    <Button size="sm" variant="outline" onClick={() => handleExport("html")}>
-                      HTML
-                    </Button>
-                    <Button size="sm" variant="outline" onClick={() => handleExport("csv")}>
-                      CSV
-                    </Button>
-                    <Button size="sm" variant="outline" onClick={() => handleExport("maestro")}>
-                      Maestro
-                    </Button>
-                    <Button size="sm" variant="outline" onClick={() => handleExport("katalon")}>
-                      Katalon
-                    </Button>
-                  </div>
                 </div>
-
-                <TestCaseList testCases={testCases} />
-              </CardFooter>
-            )}
-          </Card>
-        </TabsContent>
-
-        <TabsContent value="execute">
-          <TestExecutor testCases={testCases} url={url} />
-        </TabsContent>
-      </Tabs>
+              </div>
+            </div>
+          </div>
+        </section>
+        <section className="w-full py-12 md:py-24 lg:py-32 bg-muted">
+          <div className="container px-4 md:px-6">
+            <div className="flex flex-col items-center justify-center space-y-4 text-center">
+              <div className="space-y-2">
+                <h2 className="text-3xl font-bold tracking-tighter sm:text-5xl">How It Works</h2>
+                <p className="max-w-[900px] text-muted-foreground md:text-xl/relaxed lg:text-base/relaxed xl:text-xl/relaxed">
+                  Our AI-powered testing tool simplifies the testing process with three easy steps.
+                </p>
+              </div>
+            </div>
+            <div className="mx-auto grid max-w-5xl items-center gap-6 py-12 lg:grid-cols-3 lg:gap-12">
+              <div className="flex flex-col justify-center space-y-4">
+                <div className="flex h-12 w-12 items-center justify-center rounded-full bg-primary text-primary-foreground">
+                  <TestTube2 className="h-6 w-6" />
+                </div>
+                <h3 className="text-xl font-bold">1. Website Scraping</h3>
+                <p className="text-muted-foreground">
+                  Our tool analyzes your website to understand its structure, elements, and workflows.
+                </p>
+              </div>
+              <div className="flex flex-col justify-center space-y-4">
+                <div className="flex h-12 w-12 items-center justify-center rounded-full bg-primary text-primary-foreground">
+                  <Code className="h-6 w-6" />
+                </div>
+                <h3 className="text-xl font-bold">2. AI Test Generation</h3>
+                <p className="text-muted-foreground">
+                  Using OpenAI, we generate comprehensive test cases based on the website analysis.
+                </p>
+              </div>
+              <div className="flex flex-col justify-center space-y-4">
+                <div className="flex h-12 w-12 items-center justify-center rounded-full bg-primary text-primary-foreground">
+                  <LineChart className="h-6 w-6" />
+                </div>
+                <h3 className="text-xl font-bold">3. Test Execution & Reporting</h3>
+                <p className="text-muted-foreground">
+                  Tests are executed automatically, and detailed reports are generated with pass/fail status.
+                </p>
+              </div>
+            </div>
+          </div>
+        </section>
+      </main>
+      <footer className="border-t py-6 md:py-0">
+        <div className="container flex flex-col items-center justify-between gap-4 md:h-24 md:flex-row">
+          <p className="text-center text-sm leading-loose text-muted-foreground md:text-left">
+            © 2025 TestAI. All rights reserved.
+          </p>
+        </div>
+      </footer>
     </div>
   )
 }

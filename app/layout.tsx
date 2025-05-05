@@ -1,43 +1,29 @@
-import "./globals.css" 
-import { Inter } from "next/font/google"
-import { ThemeProvider } from "../components/theme-provider"
 import type React from "react"
+import type { Metadata } from "next/dist/lib/metadata/types/metadata-interface"
+import { Inter } from "next/font/google"
+import "./globals.css"
+import { ThemeProvider } from "@/components/theme-provider"
+import { Toaster } from "@/components/toaster"
 
-const inter = Inter({ 
-  subsets: ["latin"],
-  weight: ["400", "500", "600", "700"],
-})
+const inter = Inter({ subsets: ["latin"] })
 
-export const metadata = {
-  title: "Test Case Generator | VelocityQA",
-  description: "Generate test cases by analyzing website elements",
+export const metadata: Metadata = {
+  title: "TestAI - AI-Powered Testing Tool",
+  description: "Automatically generate and execute tests for your web applications",
+    generator: 'v0.dev'
 }
 
 export default function RootLayout({
   children,
-}: {
+}: Readonly<{
   children: React.ReactNode
-}) {
+}>) {
   return (
-    <html lang="en" className="dark">
-      <body className={`${inter.className} bg-background text-foreground min-h-screen`}>
-        <ThemeProvider
-          attribute="class"
-          defaultTheme="dark"
-          enableSystem={false}
-          forcedTheme="dark"
-        >
-          <div className="container mx-auto py-6 px-4">
-            <header className="mb-8">
-              <h1 className="text-4xl font-bold mb-2 text-foreground">
-                Test Case Generator
-              </h1>
-              <p className="text-muted-foreground">
-                Generate test cases by analyzing website elements. Enter a URL to get started.
-              </p>
-            </header>
-            {children}
-          </div>
+    <html lang="en" suppressHydrationWarning>
+      <body className={inter.className}>
+        <ThemeProvider attribute="class" defaultTheme="system" enableSystem disableTransitionOnChange>
+          {children}
+          <Toaster />
         </ThemeProvider>
       </body>
     </html>
